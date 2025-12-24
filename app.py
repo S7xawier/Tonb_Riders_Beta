@@ -143,11 +143,11 @@ def validate_init_data(init_data):
 
     logging.debug(f"Parsed data keys: {list(data.keys())}")
 
-    if 'hash' not in data:
-        logging.warning("No hash in initData")
+    if 'signature' not in data:
+        logging.warning("No signature in initData")
         return None
 
-    received_hash = data.pop('hash')
+    received_hash = data.pop('signature')
     data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(data.items()))
 
     secret_key = hmac.new('WebAppData'.encode(), BOT_TOKEN.encode(), hashlib.sha256).digest()
