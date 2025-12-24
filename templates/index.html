@@ -172,8 +172,8 @@
     </div>
 
     <script>
-        const tg = window.Telegram?.WebApp;
-        const initData = tg?.initData || null;
+        const tg = window.Telegram.WebApp;
+        const initData = tg.initData;
         let currentScreen = 'main';
         let editorGrid = [];
         let gameGrid = [];
@@ -198,7 +198,6 @@
             try {
                 const response = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
                 const result = await response.json();
