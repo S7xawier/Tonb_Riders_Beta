@@ -318,6 +318,12 @@ def raid_start():
         conn.close()
         return jsonify({'error': 'Insufficient balance'}), 400
 
+    # Проверить существование карты
+    cursor.execute('SELECT id FROM maps WHERE id = %s', (map_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Map not found'}), 404
+
     # Списать fee
     cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (fee, user_id))
     cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, -fee, 'raid_entry'))
@@ -330,6 +336,9 @@ def raid_start():
     # Получить стены из карты
     cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s', (map_id,))
     map_data = cursor.fetchone()
+    if not map_data:
+        conn.close()
+        return jsonify({'error': 'Map not found'}), 404
     grid = json.loads(map_data[0])
     dug = json.loads(map_data[1])
     walls = [i for i, x in enumerate(grid) if x == 1]
@@ -349,8 +358,8 @@ def raid_dig():
     data = request.json
     session_id = data.get('session_id')
     cell_index = data.get('cell_index')
-    if session_id is None or cell_index is None:
-        return jsonify({'error': 'Missing data'}), 400
+    if session_id is None or cell_index is None or cell_index < 0 or cell_index >= 48:
+        return jsonify({'error': 'Missing or invalid data'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -463,11 +472,13 @@ def my_tombs():
     for tomb in tombs:
         dug = json.loads(tomb['dug_json'])
         grid = json.loads(tomb['grid_json'])
+        safe_cells = sum(1 for i, x in enumerate(grid) if x in [0, 4] and i not in dug)
         # Статистика: заглушка
         result.append({
             'id': tomb['id'],
             'deaths': len([x for x in dug if grid[x] == 2]),  # Пример
-            'earnings': 0.0
+            'earnings': 0.0,
+            'can_claim': safe_cells < 12
         })
 
     conn.close()
