@@ -134,14 +134,17 @@ def validate_init_data(init_data):
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN not set")
 
-    # Разбор initData
-    data = {}
-    for pair in init_data.split('&'):
-        if '=' in pair:
-            key, value = pair.split('=', 1)
-            data[key] = urllib.parse.unquote(value)
+    # Разбор initData с использованием parse_qsl для корректной обработки
+    try:
+        data = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+    except Exception as e:
+        logging.warning(f"Failed to parse initData: {e}")
+        return None
+
+    logging.debug(f"Parsed data keys: {list(data.keys())}")
 
     if 'hash' not in data:
+        logging.warning("No hash in initData")
         return None
 
     received_hash = data.pop('hash')
@@ -150,15 +153,21 @@ def validate_init_data(init_data):
     secret_key = hmac.new('WebAppData'.encode(), BOT_TOKEN.encode(), hashlib.sha256).digest()
     calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
+    logging.debug(f"Calculated hash: {calculated_hash}")
+    logging.debug(f"Received hash: {received_hash}")
+
     if hmac.compare_digest(received_hash, calculated_hash):
         if 'user' in data:
             try:
                 user_data = json.loads(data['user'])
                 return user_data.get('id')
-            except:
+            except Exception as e:
+                logging.warning(f"Failed to parse user data: {e}")
                 return None
         return None
-    return None
+    else:
+        logging.warning(f"Hash mismatch: received={received_hash}, calculated={calculated_hash}")
+        return None
 
 def require_auth():
     init_data = request.headers.get('X-Init-Data') or request.json.get('initData') if request.is_json else None
