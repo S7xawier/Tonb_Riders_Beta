@@ -175,6 +175,7 @@
     <script>
         const tg = window.Telegram?.WebApp;
         const initData = tg ? tg.initData : 'mock_init_data'; // Mock for testing outside Telegram
+        console.log('initData:', initData);
         let currentScreen = 'main';
         let editorGrid = [];
         let gameGrid = [];
