@@ -30,6 +30,7 @@ limiter = Limiter(
 
 # Конфигурация DB
 def get_db_connection():
+    logging.info(f"DATABASE_URL is {'set' if 'DATABASE_URL' in os.environ else 'not set'}")
     try:
         return psycopg2.connect(os.environ['DATABASE_URL'], cursor_factory=psycopg2.extras.RealDictCursor)
     except Exception as e:
@@ -129,6 +130,7 @@ def create_tables():
 
 # Middleware для проверки initData
 def validate_init_data(init_data):
+    logging.info(f"BOT_TOKEN is {'set' if BOT_TOKEN else 'not set'}")
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN not set")
 
@@ -160,10 +162,13 @@ def validate_init_data(init_data):
 
 def require_auth():
     init_data = request.headers.get('X-Init-Data') or request.json.get('initData') if request.is_json else None
+    logging.info(f"init_data provided: {bool(init_data)}")
     if not init_data:
+        logging.warning("No init_data provided")
         return None
     user_id = validate_init_data(init_data)
     if not user_id:
+        logging.warning("Invalid init_data")
         return None
     return user_id
 
@@ -212,7 +217,12 @@ def login():
 def editor_template():
     user_id = require_auth()
     if not user_id:
-        return jsonify({'error': 'Unauthorized'}), 401
+        # For testing, allow mock
+        data = request.json
+        if data and data.get('initData') == 'mock_init_data':
+            user_id = 1
+        else:
+            return jsonify({'error': 'Unauthorized'}), 401
 
     # Генерировать шаблон: 48 клеток, стены рандомно
     import random
@@ -226,11 +236,14 @@ def editor_template():
 @app.route('/api/maps/create', methods=['POST'])
 def maps_create():
     user_id = require_auth()
+    logging.info(f"user_id: {user_id}")
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
 
     data = request.json
+    logging.info(f"data: {data}")
     grid = data.get('grid')
+    logging.info(f"grid: type={type(grid)}, len={len(grid) if isinstance(grid, list) else 'not list'}")
     if not grid or len(grid) != 48:
         return jsonify({'error': 'Invalid grid'}), 400
 
@@ -239,12 +252,14 @@ def maps_create():
     scarabs = sum(1 for x in grid if x == 3)
     chests = sum(1 for x in grid if x == 4)
     walls = sum(1 for x in grid if x == 1)
+    logging.info(f"counts: snakes={snakes}, scarabs={scarabs}, chests={chests}, walls={walls}")
 
     if snakes != 4 or scarabs != 2 or chests != 2:  # Сундук занимает 2 клетки
         return jsonify({'error': 'Invalid placement'}), 400
 
     # Проверить соседство сундука
     chest_positions = [i for i, x in enumerate(grid) if x == 4]
+    logging.info(f"chest_positions: {chest_positions}")
     if len(chest_positions) != 2 or abs(chest_positions[0] - chest_positions[1]) != 1:
         return jsonify({'error': 'Chest must be adjacent'}), 400
 

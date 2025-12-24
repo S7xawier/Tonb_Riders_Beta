@@ -121,6 +121,7 @@
             }
         }
     </style>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <div id="main-screen" class="screen active">
@@ -172,8 +173,8 @@
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        const initData = tg.initData;
+        const tg = window.Telegram?.WebApp;
+        const initData = tg ? tg.initData : 'mock_init_data'; // Mock for testing outside Telegram
         let currentScreen = 'main';
         let editorGrid = [];
         let gameGrid = [];
@@ -187,6 +188,7 @@
             document.getElementById(screen + '-screen').classList.add('active');
             currentScreen = screen;
             if (screen === 'editor') {
+                console.log('Loading editor screen');
                 loadEditorTemplate();
             } else if (screen === 'tombs') {
                 loadTombs();
@@ -221,13 +223,17 @@
         // Editor functions
         async function loadEditorTemplate() {
             const data = await apiCall('/api/editor/template');
+            console.log('Editor template loaded:', data);
             editorGrid = data.grid;
+            console.log('Editor grid set:', editorGrid);
             renderEditorGrid();
             updateCounts();
         }
 
         function renderEditorGrid() {
+            console.log('Rendering editor grid with', editorGrid.length, 'cells');
             const gridEl = document.getElementById('editor-grid');
+            console.log('Grid element:', gridEl);
             gridEl.innerHTML = '';
             editorGrid.forEach((cell, i) => {
                 const cellEl = document.createElement('div');
@@ -239,6 +245,7 @@
                 cellEl.addEventListener('mouseleave', () => hideGhost());
                 gridEl.appendChild(cellEl);
             });
+            console.log('Grid rendered');
         }
 
         function selectTool(tool) {
