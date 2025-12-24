@@ -201,8 +201,8 @@
             try {
                 const response = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ initData, ...data })
+                    headers: { 'Content-Type': 'application/json', 'X-Init-Data': initData },
+                    body: JSON.stringify(data)
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error || 'API error');
