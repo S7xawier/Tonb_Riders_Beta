@@ -173,7 +173,7 @@
 
     <script>
         let tg = null;
-        let initData = null;
+        var initData = null;
         if (window.Telegram && window.Telegram.WebApp) {
             tg = window.Telegram.WebApp;
             initData = tg.initData;
@@ -198,10 +198,11 @@
         }
 
         async function apiCall(endpoint, data = {}) {
+            data.initData = initData;
             try {
                 const response = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Init-Data': initData },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
                 const result = await response.json();
