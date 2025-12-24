@@ -172,8 +172,12 @@
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        const initData = tg.initData;
+        let tg = null;
+        let initData = null;
+        if (window.Telegram && window.Telegram.WebApp) {
+            tg = window.Telegram.WebApp;
+            initData = tg.initData;
+        }
         let currentScreen = 'main';
         let editorGrid = [];
         let gameGrid = [];
@@ -421,7 +425,7 @@
         }
 
         // Init
-        tg.ready();
+        if (tg) tg.ready();
         apiCall('/api/login'); // login on start
     </script>
 </body>
