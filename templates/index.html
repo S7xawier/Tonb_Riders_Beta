@@ -172,12 +172,8 @@
     </div>
 
     <script>
-        let tg = null;
-        var initData = null;
-        if (window.Telegram && window.Telegram.WebApp) {
-            tg = window.Telegram.WebApp;
-            initData = tg.initData;
-        }
+        const tg = window.Telegram?.WebApp;
+        const initData = tg?.initData || null;
         let currentScreen = 'main';
         let editorGrid = [];
         let gameGrid = [];
