@@ -6,7 +6,7 @@ import logging
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 
 load_dotenv()
@@ -139,6 +139,10 @@ def require_auth():
     if not user_id:
         return None
     return user_id
+
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 # Эндпоинты
 
@@ -472,7 +476,12 @@ def my_tombs_claim():
 
     return jsonify({'success': True, 'reward': reward})
 
-if __name__ == '__main__':
+try:
     create_tables()
+    logging.info("Tables created successfully")
+except Exception as e:
+    logging.error(f"Error creating tables: {e}")
+
+if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
