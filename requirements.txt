@@ -2,3 +2,7 @@ Flask
 psycopg2-binary  # для PostgreSQL; для SQLite используйте sqlite3 (встроенный)
 python-dotenv
 gunicorn
+pytest
+Flask-CORS
+Flask-Limiter==3.5.0
+redis==4.5.4

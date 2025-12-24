@@ -3,16 +3,30 @@ import json
 import hashlib
 import hmac
 import logging
+import urllib.parse
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+import redis
 from datetime import datetime, timedelta
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
+
+CORS(app, origins=['*'], methods=['GET', 'POST', 'OPTIONS'], allow_headers=['Content-Type', 'X-Init-Data'])
+
+limiter = Limiter(
+    app=app,
+    key_func=lambda: require_auth() or get_remote_address(),
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri=os.environ.get('REDIS_URL', 'memory://')
+)
 
 # Конфигурация DB
 def get_db_connection():
@@ -23,6 +37,13 @@ def get_db_connection():
         raise
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN')  # Установить в переменных окружения
+
+def safe_json_loads(data, default):
+    try:
+        return json.loads(data)
+    except Exception as e:
+        logging.warning(f"Failed to parse JSON: {e}")
+        return default
 
 # Функция для создания таблиц
 def create_tables():
@@ -116,7 +137,7 @@ def validate_init_data(init_data):
     for pair in init_data.split('&'):
         if '=' in pair:
             key, value = pair.split('=', 1)
-            data[key] = value
+            data[key] = urllib.parse.unquote(value)
 
     if 'hash' not in data:
         return None
@@ -128,7 +149,13 @@ def validate_init_data(init_data):
     calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     if hmac.compare_digest(received_hash, calculated_hash):
-        return int(data.get('user', '{}').split('"id":')[1].split(',')[0]) if 'user' in data else None
+        if 'user' in data:
+            try:
+                user_data = json.loads(data['user'])
+                return user_data.get('id')
+            except:
+                return None
+        return None
     return None
 
 def require_auth():
@@ -146,7 +173,7 @@ def index():
 
 # Эндпоинты
 
-@app.route('/api/login', methods=['POST'])
+@app.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
     user_id = require_auth()
     if not user_id:
@@ -267,6 +294,7 @@ def raid_scout():
 
     return jsonify({'map_id': map_id, 'stats': stats, 'fee': fee})
 
+@limiter.limit("1 per minute")
 @app.route('/api/raid/start', methods=['POST'])
 def raid_start():
     user_id = require_auth()
@@ -311,6 +339,7 @@ def raid_start():
 
     return jsonify({'session_id': session_id, 'walls': walls, 'dug': dug})
 
+@limiter.limit("20 per minute")
 @app.route('/api/raid/dig', methods=['POST'])
 def raid_dig():
     user_id = require_auth()
@@ -340,7 +369,7 @@ def raid_dig():
         return jsonify({'status': 'timeout'})
 
     map_id = session['map_id']
-    dug_history = json.loads(session['dug_history'])
+    dug_history = safe_json_loads(session['dug_history'], [])
 
     if cell_index in dug_history:
         conn.close()
@@ -349,8 +378,14 @@ def raid_dig():
     # Получить карту
     cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s', (map_id,))
     map_data = cursor.fetchone()
-    grid = json.loads(map_data[0])
-    dug = json.loads(map_data[1])
+    grid = safe_json_loads(map_data['grid_json'], None)
+    if grid is None:
+        conn.close()
+        return jsonify({'error': 'Map data corrupted'}), 500
+    dug = safe_json_loads(map_data['dug_json'], None)
+    if dug is None:
+        conn.close()
+        return jsonify({'error': 'Map data corrupted'}), 500
 
     cell_type = grid[cell_index]
 
@@ -481,6 +516,15 @@ try:
     logging.info("Tables created successfully")
 except Exception as e:
     logging.error(f"Error creating tables: {e}")
+
+@app.errorhandler(500)
+def internal_error(error):
+    logging.error(f"Internal server error: {error}")
+    return jsonify({'error': 'Internal server error'}), 500
+
+@app.errorhandler(429)
+def ratelimit_error(e):
+    return jsonify({'error': 'Too many requests', 'retry_after': e.description}), 429
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
