@@ -56,15 +56,6 @@
         .cell.ghost-red {
             background-color: #f44336;
         }
-        .cell.snake {
-            background-color: #4caf50;
-        }
-        .cell.scarab {
-            background-color: #795548;
-        }
-        .cell.chest {
-            background-color: #ffeb3b;
-        }
         .toolbar {
             display: flex;
             justify-content: space-around;
@@ -251,18 +242,7 @@
             editorGrid.forEach((cell, i) => {
                 const cellEl = document.createElement('div');
                 cellEl.className = 'cell';
-                if (cell === 0) {
-                    cellEl.classList.add('wall');
-                } else if (cell === 2) {
-                    cellEl.innerHTML = '🐍';
-                    cellEl.classList.add('snake');
-                } else if (cell === 3) {
-                    cellEl.innerHTML = '🪲';
-                    cellEl.classList.add('scarab');
-                } else if (cell === 4) {
-                    cellEl.innerHTML = '💰';
-                    cellEl.classList.add('chest');
-                }
+                if (cell === 0) cellEl.classList.add('wall');
                 cellEl.dataset.index = i;
                 cellEl.addEventListener('click', () => placeItem(i));
                 cellEl.addEventListener('mouseenter', () => showGhost(i));
