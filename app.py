@@ -235,9 +235,9 @@ def login():
 
         if not user:
             # Создать нового пользователя
-            cursor.execute('INSERT INTO users (id, username, balance, builder_credits) VALUES (%s, %s, 0.0, 5)', (user_id, f'user_{user_id}'))
+            cursor.execute('INSERT INTO users (id, username, balance, builder_credits) VALUES (%s, %s, 1.0, 5)', (user_id, f'user_{user_id}'))
             conn.commit()
-            user = {'id': user_id, 'username': f'user_{user_id}', 'balance': 0.0, 'builder_credits': 5}
+            user = {'id': user_id, 'username': f'user_{user_id}', 'balance': 1.0, 'builder_credits': 5}
 
         # Проверить активную сессию
         cursor.execute('SELECT * FROM raid_sessions WHERE player_id = %s AND status = %s', (user_id, 'active'))
