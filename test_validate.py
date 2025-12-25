@@ -4,7 +4,6 @@ import json
 import hmac
 import hashlib
 import time
-from app import validate_init_data, app
 from flask import request
 
 class TestValidateInitData(unittest.TestCase):
@@ -13,10 +12,21 @@ class TestValidateInitData(unittest.TestCase):
         cls.bot_token = 'test_bot_token'
         cls.patcher = patch('app.BOT_TOKEN', cls.bot_token)
         cls.patcher.start()
+        # Mock database to prevent connection during import
+        cls.db_patcher = patch('app.get_db_connection')
+        cls.mock_get_db = cls.db_patcher.start()
+        cls.mock_conn = MagicMock()
+        cls.mock_get_db.return_value = cls.mock_conn
+        cls.mock_cursor = MagicMock()
+        cls.mock_conn.cursor.return_value = cls.mock_cursor
+        # Import after mocking
+        from app import validate_init_data
+        cls.validate_init_data = validate_init_data
 
     @classmethod
     def tearDownClass(cls):
         cls.patcher.stop()
+        cls.db_patcher.stop()
 
     def _generate_hash(self, data_dict):
         data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(data_dict.items()))
@@ -33,7 +43,7 @@ class TestValidateInitData(unittest.TestCase):
     def test_valid_init_data(self):
         data = {'user': '{"id":123,"username":"test"}', 'auth_date': str(int(time.time()))}
         init_data = self._create_init_data(data)
-        result = validate_init_data(init_data)
+        result = self.validate_init_data(init_data)
         self.assertEqual(result, 123)
 
     def test_invalid_hash(self):
@@ -46,38 +56,40 @@ class TestValidateInitData(unittest.TestCase):
                 parts[i] = 'hash=invalid'
                 break
         invalid_init_data = '&'.join(parts)
-        result = validate_init_data(invalid_init_data)
+        result = self.validate_init_data(invalid_init_data)
         self.assertIsNone(result)
 
     def test_missing_hash(self):
         data = {'user': '{"id":123,"username":"test"}', 'auth_date': '123456'}
         init_data = self._create_init_data(data, include_hash=False)
-        result = validate_init_data(init_data)
+        result = self.validate_init_data(init_data)
         self.assertIsNone(result)
 
     def test_malformed_user_json(self):
         data = {'user': 'invalid json', 'auth_date': '123456'}
         init_data = self._create_init_data(data)
-        result = validate_init_data(init_data)
+        result = self.validate_init_data(init_data)
         self.assertIsNone(result)
 
     def test_missing_user(self):
         data = {'auth_date': '123456'}
         init_data = self._create_init_data(data)
-        result = validate_init_data(init_data)
+        result = self.validate_init_data(init_data)
         self.assertIsNone(result)
 
 
 class TestRaidDig(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.app = app
-        cls.client = cls.app.test_client()
-        # Mock database to avoid connection errors during import
+        # Mock database before importing app
         cls.db_patcher = patch('app.get_db_connection')
         cls.mock_get_db = cls.db_patcher.start()
         cls.mock_conn = MagicMock()
         cls.mock_get_db.return_value = cls.mock_conn
+        # Import app after mocking
+        from app import app
+        cls.app = app
+        cls.client = cls.app.test_client()
 
     @classmethod
     def tearDownClass(cls):

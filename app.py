@@ -266,12 +266,12 @@ def maps_create():
 
     # Валидация
     snakes = sum(1 for x in grid if x == 2)
-    scarabs = sum(1 for x in grid if x == 3)
+    holes = sum(1 for x in grid if x == 3)
     chests = sum(1 for x in grid if x == 4)
     walls = sum(1 for x in grid if x == 1)
-    logging.info(f"counts: snakes={snakes}, scarabs={scarabs}, chests={chests}, walls={walls}")
+    logging.info(f"counts: snakes={snakes}, holes={holes}, chests={chests}, walls={walls}")
 
-    if snakes != 4 or scarabs != 2 or chests != 2:  # Сундук занимает 2 клетки
+    if snakes != 4 or holes != 2 or chests != 2:  # Сундук занимает 2 клетки
         return jsonify({'error': 'Invalid placement'}), 400
 
     # Проверить соседство сундука
@@ -438,7 +438,7 @@ def raid_dig():
         conn.close()
         return jsonify({'status': 'dead', 'reward': 0})
 
-    elif cell_type == 3:  # Скарабей
+    elif cell_type == 3:  # Дыра
         cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('hurt', session_id))
         conn.commit()
         conn.close()

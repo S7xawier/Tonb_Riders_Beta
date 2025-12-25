@@ -7,7 +7,7 @@ def test_dig_limits():
     print("Testing /api/raid/dig limits (10 per minute)")
     for i in range(12):
         try:
-            response = requests.post(f'{BASE_URL}/api/raid/dig', json={'session_id': 1, 'cell_index': 0})
+            response = requests.post(f'{BASE_URL}/api/raid/dig', json={'initData': 'mock_init_data', 'session_id': 1, 'cell_index': 0})
             print(f"Request {i+1}: {response.status_code}")
             if response.status_code == 429:
                 print("Rate limit hit!")
@@ -20,7 +20,7 @@ def test_start_limits():
     print("Testing /api/raid/start limits (1 per minute)")
     for i in range(3):
         try:
-            response = requests.post(f'{BASE_URL}/api/raid/start', json={'map_id': 1})
+            response = requests.post(f'{BASE_URL}/api/raid/start', json={'initData': 'mock_init_data', 'map_id': 1})
             print(f"Request {i+1}: {response.status_code}")
             if response.status_code == 429:
                 print("Rate limit hit!")

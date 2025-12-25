@@ -39,22 +39,38 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            background-color: #ddd;
+            background-color: #795548;
+            position: relative;
         }
         .cell.wall {
-            background-color: #666;
+            background-color: #f4e7be;
+        }
+        .cell.wall::before {
+            content: none;
         }
         .cell.dug {
-            background-color: #fff;
+            background-color: #f4e7be;
         }
         .cell.sand {
-            background-color: #ffeb3b;
+            background-color: #f4e7be;
         }
         .cell.ghost-green {
             background-color: #4caf50;
         }
         .cell.ghost-red {
             background-color: #f44336;
+        }
+        .cell[data-type="2"]::before {
+            content: "🐍";
+        }
+        .cell[data-type="3"]::before {
+            content: "🕳️";
+        }
+        .cell[data-type="4"] {
+            background-color: gold;
+        }
+        .cell[data-type="4"]::before {
+            content: "⚰️";
         }
         .toolbar {
             display: flex;
@@ -68,7 +84,8 @@
             background-color: #fff;
         }
         .tool.active {
-            background-color: #ddd;
+            background-color: yellow;
+            transform: scale(1.1);
         }
         .modal {
             position: fixed;
@@ -135,10 +152,8 @@
         <h2>Редактор карт</h2>
         <div class="toolbar">
             <div class="tool" data-type="snake" onclick="selectTool('snake')">Змея <span id="snake-count">0/4</span></div>
-            <div class="tool" data-type="scarab" onclick="selectTool('scarab')">Скарабей <span id="scarab-count">0/2</span></div>
+            <div class="tool" data-type="scarab" onclick="selectTool('scarab')">Дыра <span id="scarab-count">0/2</span></div>
             <div class="tool" data-type="chest" onclick="selectTool('chest')">Сундук <span id="chest-count">0/1</span></div>
-            <div class="tool" data-type="eraser" onclick="selectTool('eraser')">Ластик</div>
-            <button onclick="rotateChest()">Повернуть</button>
         </div>
         <div id="editor-grid" class="grid"></div>
         <button id="publish-btn" onclick="publishMap()" disabled>Опубликовать</button>
@@ -182,7 +197,7 @@
         let sessionId = null;
         let timerInterval = null;
         let selectedTool = null;
-        let chestOrientation = 'horizontal'; // horizontal or vertical
+        let isDrawing = false;
 
         function showScreen(screen) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -242,13 +257,36 @@
             editorGrid.forEach((cell, i) => {
                 const cellEl = document.createElement('div');
                 cellEl.className = 'cell';
+                cellEl.dataset.type = cell;
                 if (cell === 0) cellEl.classList.add('wall');
                 cellEl.dataset.index = i;
-                cellEl.addEventListener('click', () => placeItem(i));
-                cellEl.addEventListener('mouseenter', () => showGhost(i));
+                cellEl.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    isDrawing = true;
+                    placeItem(i);
+                });
+                cellEl.addEventListener('mouseenter', () => {
+                    if (isDrawing) placeItem(i);
+                    showGhost(i);
+                });
                 cellEl.addEventListener('mouseleave', () => hideGhost());
+                cellEl.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    isDrawing = true;
+                    placeItem(i);
+                });
+                cellEl.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (target && target.dataset.index) {
+                        placeItem(parseInt(target.dataset.index));
+                    }
+                });
                 gridEl.appendChild(cellEl);
             });
+            document.addEventListener('mouseup', () => isDrawing = false);
+            document.addEventListener('touchend', () => isDrawing = false);
             console.log('Grid rendered');
         }
 
@@ -256,42 +294,61 @@
             selectedTool = tool;
             document.querySelectorAll('.tool').forEach(t => t.classList.remove('active'));
             if (tool) document.querySelector(`[data-type="${tool}"]`).classList.add('active');
+            if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
         }
 
         function placeItem(index) {
-            if (!selectedTool || selectedTool === 'eraser') {
-                if (editorGrid[index] > 0) {
-                    editorGrid[index] = 1; // empty
-                    updateCounts();
-                    renderEditorGrid();
-                }
-                return;
-            }
-            if (editorGrid[index] !== 1) return; // only on empty
+            if (editorGrid[index] === 0) return; // wall
+            if (!selectedTool) return;
+
+            const type = selectedTool === 'snake' ? 2 : selectedTool === 'scarab' ? 3 : 4;
+            let action = 'set'; // set, replace, remove
+            let haptic = 'medium';
+
             if (selectedTool === 'chest') {
-                const secondIndex = getChestSecondIndex(index);
-                if (secondIndex === null || editorGrid[secondIndex] !== 1) return;
-                editorGrid[index] = 4;
-                editorGrid[secondIndex] = 4;
+                // Smart chest: try horizontal, then vertical
+                const row = Math.floor(index / 8);
+                const col = index % 8;
+                let secondIndex = null;
+                if (col < 7 && editorGrid[index + 1] !== 0) {
+                    secondIndex = index + 1;
+                } else if (row < 5 && editorGrid[index + 8] !== 0) {
+                    secondIndex = index + 8;
+                }
+                if (secondIndex === null) return; // can't place
+
+                if (editorGrid[index] === 4 && editorGrid[secondIndex] === 4) {
+                    // remove
+                    editorGrid[index] = 1;
+                    editorGrid[secondIndex] = 1;
+                    action = 'remove';
+                    haptic = 'light';
+                } else if (editorGrid[index] === 1 && editorGrid[secondIndex] === 1) {
+                    // set
+                    editorGrid[index] = 4;
+                    editorGrid[secondIndex] = 4;
+                    haptic = 'heavy';
+                }
             } else {
-                const type = selectedTool === 'snake' ? 2 : 3;
-                editorGrid[index] = type;
+                if (editorGrid[index] === 1) {
+                    // set
+                    editorGrid[index] = type;
+                } else if (editorGrid[index] === type) {
+                    // remove
+                    editorGrid[index] = 1;
+                    action = 'remove';
+                    haptic = 'light';
+                } else {
+                    // replace
+                    editorGrid[index] = type;
+                }
             }
+
             updateCounts();
             renderEditorGrid();
+            if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred(haptic);
         }
 
-        function getChestSecondIndex(index) {
-            const row = Math.floor(index / 8);
-            const col = index % 8;
-            if (chestOrientation === 'horizontal' && col < 7) return index + 1;
-            if (chestOrientation === 'vertical' && row < 5) return index + 8;
-            return null;
-        }
-
-        function rotateChest() {
-            chestOrientation = chestOrientation === 'horizontal' ? 'vertical' : 'horizontal';
-        }
 
         function showGhost(index) {
             hideGhost();
@@ -349,6 +406,7 @@
             gameGrid.forEach((cell, i) => {
                 const cellEl = document.createElement('div');
                 cellEl.className = 'cell';
+                cellEl.dataset.type = cell;
                 if (cell === 0) cellEl.classList.add('wall');
                 else if (cell === 2) cellEl.classList.add('dug'); // assume dug if not wall
                 else cellEl.classList.add('sand');
