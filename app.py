@@ -395,8 +395,8 @@ def raid_start():
     if not map_data:
         conn.close()
         return jsonify({'error': 'Map not found'}), 404
-    grid = json.loads(map_data[0])
-    dug = json.loads(map_data[1])
+    grid = json.loads(map_data['grid_json'])
+    dug = json.loads(map_data['dug_json'])
     walls = [i for i, x in enumerate(grid) if x == 1]
 
     conn.commit()
