@@ -344,7 +344,7 @@ def raid_scout():
     map_id = map_row['id']
     # Статистика: просто заглушка, в реальности считать из transactions или добавить поля
     stats = {'deaths': 0, 'wins': 0}
-    fee = 0.1  # Пример
+    fee = 0.0  # Пример, для теста
 
     conn.close()
 
@@ -369,7 +369,7 @@ def raid_start():
     cursor.execute('SELECT balance FROM users WHERE id = %s', (user_id,))
     balance_row = cursor.fetchone()
     balance = balance_row['balance'] if balance_row else 0.0
-    fee = 0.1  # Пример
+    fee = 0.0  # Пример, для теста
     if balance < fee:
         conn.close()
         return jsonify({'error': 'Insufficient balance'}), 400
