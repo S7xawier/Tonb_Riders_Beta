@@ -488,7 +488,7 @@ def raid_leave():
 
     return jsonify({'success': True, 'earnings': earnings})
 
-@app.route('/api/my_tombs', methods=['GET'])
+@app.route('/api/my_tombs', methods=\['POST'\])
 def my_tombs():
     user_id = require_auth()
     if not user_id:
