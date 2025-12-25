@@ -47,6 +47,30 @@ def safe_json_loads(data, default):
         logging.warning(f"Failed to parse JSON: {e}")
         return default
 
+# Функция для миграции существующих таблиц
+def migrate_tables():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Изменить тип id в users на BIGINT
+        cursor.execute('ALTER TABLE users ALTER COLUMN id TYPE BIGINT')
+        # Изменить FK в maps
+        cursor.execute('ALTER TABLE maps ALTER COLUMN creator_id TYPE BIGINT')
+        # В raid_sessions
+        cursor.execute('ALTER TABLE raid_sessions ALTER COLUMN player_id TYPE BIGINT')
+        # В transactions
+        cursor.execute('ALTER TABLE transactions ALTER COLUMN user_id TYPE BIGINT')
+        # В social
+        cursor.execute('ALTER TABLE social ALTER COLUMN user_id TYPE BIGINT')
+        cursor.execute('ALTER TABLE social ALTER COLUMN friend_id TYPE BIGINT')
+        conn.commit()
+        logging.info("Tables migrated successfully")
+    except Exception as e:
+        logging.warning(f"Migration error (possibly already migrated): {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
 # Функция для создания таблиц
 def create_tables():
     conn = get_db_connection()
@@ -55,7 +79,7 @@ def create_tables():
     # Users
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY,
+            id BIGINT PRIMARY KEY,
             username TEXT,
             balance REAL DEFAULT 0.0,
             builder_credits INTEGER DEFAULT 0,
@@ -68,7 +92,7 @@ def create_tables():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS maps (
             id SERIAL PRIMARY KEY,
-            creator_id INTEGER,
+            creator_id BIGINT,
             grid_json TEXT,
             dug_json TEXT DEFAULT '[]',
             difficulty REAL DEFAULT 1.0,
@@ -84,7 +108,7 @@ def create_tables():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS raid_sessions (
             id SERIAL PRIMARY KEY,
-            player_id INTEGER,
+            player_id BIGINT,
             map_id INTEGER,
             current_stage INTEGER DEFAULT 1,
             status TEXT DEFAULT 'active',
@@ -103,7 +127,7 @@ def create_tables():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER,
+            user_id BIGINT,
             amount REAL,
             type TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -116,8 +140,8 @@ def create_tables():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS social (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER,
-            friend_id INTEGER,
+            user_id BIGINT,
+            friend_id BIGINT,
             status TEXT DEFAULT 'pending',
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (friend_id) REFERENCES users(id)
@@ -556,9 +580,10 @@ def my_tombs_claim():
 
 try:
     create_tables()
-    logging.info("Tables created successfully")
+    migrate_tables()
+    logging.info("Tables created and migrated successfully")
 except Exception as e:
-    logging.error(f"Error creating tables: {e}")
+    logging.error(f"Error creating/migrating tables: {e}")
 
 @app.errorhandler(500)
 def internal_error(error):
