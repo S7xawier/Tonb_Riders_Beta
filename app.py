@@ -341,7 +341,7 @@ def raid_scout():
         conn.close()
         return jsonify({'error': 'No maps available'}), 404
 
-    map_id = map_row[0]
+    map_id = map_row['id']
     # Статистика: просто заглушка, в реальности считать из transactions или добавить поля
     stats = {'deaths': 0, 'wins': 0}
     fee = 0.1  # Пример
