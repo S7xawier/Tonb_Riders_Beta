@@ -19,7 +19,7 @@ class TestValidateInitData(unittest.TestCase):
 
     def _generate_hash(self, data_dict):
         data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(data_dict.items()))
-        secret_key = hmac.new('WebAppData'.encode(), self.bot_token.encode(), hashlib.sha256).digest()
+        secret_key = hashlib.sha256(self.bot_token.encode()).digest()
         return hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     def _create_init_data(self, data_dict, include_hash=True):
