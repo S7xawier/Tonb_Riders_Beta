@@ -301,8 +301,12 @@ def maps_create():
     # Проверить соседство сундука
     chest_positions = [i for i, x in enumerate(grid) if x == 4]
     logging.info(f"chest_positions: {chest_positions}")
-    if len(chest_positions) != 2 or abs(chest_positions[0] - chest_positions[1]) != 1:
+    if len(chest_positions) != 2:
         return jsonify({'error': 'Chest must be adjacent'}), 400
+    p1, p2 = sorted(chest_positions)
+    diff = p2 - p1
+    if not ((diff == 1 and p1 // 8 == p2 // 8) or diff == 8):
+        return jsonify({'error': 'Chest must be adjacent horizontally or vertically'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
