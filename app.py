@@ -3,6 +3,7 @@ import json
 import hashlib
 import hmac
 import logging
+import time
 import urllib.parse
 import psycopg2
 import psycopg2.extras
@@ -146,6 +147,10 @@ def validate_init_data(init_data):
 
     logging.debug(f"Parsed data keys: {list(data.keys())}")
 
+    if 'auth_date' not in data or time.time() - int(data['auth_date']) >= 86400:
+        logging.warning("auth_date missing or expired")
+        return None
+
     if 'hash' not in data:
         logging.warning("No hash in initData")
         return None
@@ -153,7 +158,7 @@ def validate_init_data(init_data):
     received_hash = data.pop('hash')
     data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(data.items()))
 
-    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
+    secret_key = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
     calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     logging.debug(f"Calculated hash: {calculated_hash}")

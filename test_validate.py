@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 import json
 import hmac
 import hashlib
+import time
 from app import validate_init_data, app
 from flask import request
 
@@ -30,7 +31,7 @@ class TestValidateInitData(unittest.TestCase):
         return '&'.join(f"{k}={v}" for k, v in data_dict.items())
 
     def test_valid_init_data(self):
-        data = {'user': '{"id":123,"username":"test"}', 'auth_date': '123456'}
+        data = {'user': '{"id":123,"username":"test"}', 'auth_date': str(int(time.time()))}
         init_data = self._create_init_data(data)
         result = validate_init_data(init_data)
         self.assertEqual(result, 123)
