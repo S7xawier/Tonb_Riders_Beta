@@ -386,7 +386,7 @@ def raid_start():
     session = cursor.fetchone()
     create_new = True
     if session:
-        if datetime.now() > datetime.fromisoformat(session['expires_at']):
+        if datetime.now() > session['expires_at']:
             cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session['id']))
         else:
             # resume
@@ -491,7 +491,7 @@ def raid_dig():
         conn.close()
         return jsonify({'error': 'Session not found'}), 404
 
-    if datetime.now() > datetime.fromisoformat(session['expires_at']):
+    if datetime.now() > session['expires_at']:
         cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session_id))
         conn.commit()
         conn.close()
