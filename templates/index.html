@@ -61,7 +61,7 @@
             background-color: #f44336;
         }
         .cell[data-type="2"]::before {
-            content: "🐍";
+            content: "💀";
         }
         .cell[data-type="3"]::before {
             content: "🕳️";
@@ -172,6 +172,19 @@
         <button onclick="showScreen('main')">Назад</button>
     </div>
 
+    <div id="scout-screen" class="screen">
+        <h2>Разведка</h2>
+        <div id="scout-preview" class="grid"></div>
+        <div class="stats">
+            <p>Смертей: <span id="scout-deaths">0</span></p>
+            <p>Побед: <span id="scout-wins">0</span></p>
+            <p>Стоимость входа: <span id="scout-fee">0.0</span></p>
+        </div>
+        <button onclick="scoutAnother()">Искать другую карту</button>
+        <button onclick="startRaidFromScout()">Грабить эту карту</button>
+        <button onclick="showScreen('main')">Назад</button>
+    </div>
+
     <div id="win-modal" class="modal">
         <div class="modal-content">
             <h3>Победа!</h3>
@@ -198,6 +211,10 @@
         let timerInterval = null;
         let selectedTool = null;
         let pendingIndex = null;
+        let ghostIndex = null;
+        let potentialPlacement = [];
+        let isValidPlacement = false;
+        let scoutData = null;
 
         function showScreen(screen) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -261,146 +278,151 @@
                 if (cell === 0) cellEl.classList.add('wall');
                 cellEl.dataset.index = i;
                 cellEl.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    pendingIndex = i;
-                    showGhost(i);
-                });
-                cellEl.addEventListener('mouseenter', () => {
-                    if (pendingIndex !== null) {
-                        showGhost(i);
+                    if (selectedTool) {
+                        e.preventDefault();
+                        pendingIndex = i;
                     }
                 });
-                cellEl.addEventListener('mouseleave', () => hideGhost());
                 cellEl.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    pendingIndex = i;
-                    showGhost(i);
-                });
-                cellEl.addEventListener('touchmove', (e) => {
-                    e.preventDefault();
-                    const touch = e.touches[0];
-                    const target = document.elementFromPoint(touch.clientX, touch.clientY);
-                    if (target && target.dataset.index) {
-                        showGhost(parseInt(target.dataset.index));
+                    if (selectedTool) {
+                        e.preventDefault();
+                        pendingIndex = i;
                     }
                 });
                 gridEl.appendChild(cellEl);
             });
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('touchmove', handleTouchMove, { passive: false });
             document.addEventListener('mouseup', () => {
-                if (pendingIndex !== null) {
-                    commitPlacement(pendingIndex);
-                    pendingIndex = null;
-                    hideGhost();
+                if (isValidPlacement) {
+                    commitPotentialPlacement();
                 }
+                clearGhost();
             });
             document.addEventListener('touchend', () => {
-                if (pendingIndex !== null) {
-                    commitPlacement(pendingIndex);
-                    pendingIndex = null;
-                    hideGhost();
+                if (isValidPlacement) {
+                    commitPotentialPlacement();
                 }
+                clearGhost();
             });
             console.log('Grid rendered');
+        }
+
+        function handleMouseMove(e) {
+            if (pendingIndex === null || !selectedTool) return;
+            e.preventDefault();
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            updateGhostFromTarget(target);
+        }
+
+        function handleTouchMove(e) {
+            if (pendingIndex === null || !selectedTool) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const target = document.elementFromPoint(touch.clientX, touch.clientY);
+            updateGhostFromTarget(target);
+        }
+
+        function updateGhostFromTarget(target) {
+            clearGhost();
+            if (!target || !target.classList.contains('cell') || !target.dataset.index) {
+                ghostIndex = null;
+                potentialPlacement = [];
+                isValidPlacement = false;
+                return;
+            }
+            ghostIndex = parseInt(target.dataset.index);
+            potentialPlacement = calculatePotentialPlacement(ghostIndex);
+            isValidPlacement = potentialPlacement.length > 0 && potentialPlacement.every(i => editorGrid[i] !== 0);
+            if (selectedTool === 'chest' && potentialPlacement.length === 2) {
+                const [i1, i2] = potentialPlacement;
+                isValidPlacement = isValidPlacement && ((editorGrid[i1] === 1 && editorGrid[i2] === 1) || (editorGrid[i1] === 4 && editorGrid[i2] === 4));
+            }
+            applyGhostClasses();
+        }
+
+        function calculatePotentialPlacement(index) {
+            if (!selectedTool) return [];
+            if (selectedTool === 'chest') {
+                const row = Math.floor(index / 8);
+                const col = index % 8;
+                let placements = [index];
+                let second = null;
+                if (col < 7 && editorGrid[index + 1] !== 0) { // not wall
+                    second = index + 1;
+                } else if (row < 5 && editorGrid[index + 8] !== 0) {
+                    second = index + 8;
+                }
+                if (second !== null) placements.push(second);
+                return placements;
+            } else {
+                return [index];
+            }
+        }
+
+        function applyGhostClasses() {
+            potentialPlacement.forEach(i => {
+                const cellEl = document.querySelector(`[data-index="${i}"]`);
+                if (cellEl) {
+                    if (isValidPlacement) {
+                        cellEl.classList.add('ghost-green');
+                    } else {
+                        cellEl.classList.add('ghost-red');
+                    }
+                }
+            });
+        }
+
+        function clearGhost() {
+            document.querySelectorAll('.cell').forEach(c => {
+                c.classList.remove('ghost-green', 'ghost-red');
+            });
+            ghostIndex = null;
+            potentialPlacement = [];
+            isValidPlacement = false;
+        }
+
+        function commitPotentialPlacement() {
+            if (!isValidPlacement || potentialPlacement.length === 0) return;
+            if (selectedTool === 'chest') {
+                const [i1, i2] = potentialPlacement;
+                if (editorGrid[i1] === 4 && editorGrid[i2] === 4) {
+                    // remove
+                    editorGrid[i1] = 1;
+                    editorGrid[i2] = 1;
+                    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+                } else if (editorGrid[i1] === 1 && editorGrid[i2] === 1) {
+                    // set
+                    editorGrid[i1] = 4;
+                    editorGrid[i2] = 4;
+                    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('heavy');
+                }
+            } else {
+                const type = selectedTool === 'snake' ? 2 : selectedTool === 'scarab' ? 3 : 4;
+                potentialPlacement.forEach(i => {
+                    if (editorGrid[i] === 1) {
+                        editorGrid[i] = type;
+                    } else if (editorGrid[i] === type) {
+                        editorGrid[i] = 1;
+                    } else {
+                        editorGrid[i] = type;
+                    }
+                });
+                if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+            }
+            updateCounts();
+            renderEditorGrid();
         }
 
         function selectTool(tool) {
             selectedTool = tool;
             pendingIndex = null;
-            hideGhost();
+            clearGhost();
             document.querySelectorAll('.tool').forEach(t => t.classList.remove('active'));
             if (tool) document.querySelector(`[data-type="${tool}"]`).classList.add('active');
             if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
         }
 
-        function commitPlacement(index) {
-            if (editorGrid[index] === 0) return; // wall
-            if (!selectedTool) return;
-
-            const type = selectedTool === 'snake' ? 2 : selectedTool === 'scarab' ? 3 : 4;
-            let action = 'set'; // set, replace, remove
-            let haptic = 'medium';
-
-            if (selectedTool === 'chest') {
-                // Smart chest: try horizontal, then vertical
-                const row = Math.floor(index / 8);
-                const col = index % 8;
-                let secondIndex = null;
-                if (col < 7 && editorGrid[index + 1] === 1) {
-                    secondIndex = index + 1;
-                } else if (row < 5 && editorGrid[index + 8] === 1) {
-                    secondIndex = index + 8;
-                }
-                if (secondIndex === null) return; // can't place
-
-                if (editorGrid[index] === 4 && editorGrid[secondIndex] === 4) {
-                    // remove
-                    editorGrid[index] = 1;
-                    editorGrid[secondIndex] = 1;
-                    action = 'remove';
-                    haptic = 'light';
-                } else if (editorGrid[index] === 1 && editorGrid[secondIndex] === 1) {
-                    // set
-                    editorGrid[index] = 4;
-                    editorGrid[secondIndex] = 4;
-                    haptic = 'heavy';
-                }
-            } else {
-                if (editorGrid[index] === 1) {
-                    // set
-                    editorGrid[index] = type;
-                } else if (editorGrid[index] === type) {
-                    // remove
-                    editorGrid[index] = 1;
-                    action = 'remove';
-                    haptic = 'light';
-                } else {
-                    // replace
-                    editorGrid[index] = type;
-                }
-            }
-
-            updateCounts();
-            renderEditorGrid();
-            if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred(haptic);
-        }
-
-
-        function showGhost(index) {
-            hideGhost();
-            if (!selectedTool) return;
-            const cells = [index];
-            if (selectedTool === 'chest') {
-                const second = getChestSecondIndex(index);
-                if (second !== null) cells.push(second);
-            }
-            cells.forEach(i => {
-                const cellEl = document.querySelector(`[data-index="${i}"]`);
-                if (editorGrid[i] === 1) {
-                    cellEl.classList.add('ghost-green');
-                } else {
-                    cellEl.classList.add('ghost-red');
-                }
-            });
-        }
-
-        function hideGhost() {
-            document.querySelectorAll('.cell').forEach(c => {
-                c.classList.remove('ghost-green', 'ghost-red');
-            });
-        }
-
-        function getChestSecondIndex(index) {
-            if (editorGrid[index] !== 1) return null;
-            const row = Math.floor(index / 8);
-            const col = index % 8;
-            let second = null;
-            if (col < 7 && editorGrid[index + 1] === 1) {
-                second = index + 1;
-            } else if (row < 5 && editorGrid[index + 8] === 1) {
-                second = index + 8;
-            }
-            return second;
-        }
 
         function updateCounts() {
             const snakes = editorGrid.filter(c => c === 2).length;
@@ -419,13 +441,47 @@
 
         // Gameplay functions
         async function startRaid() {
-            const scout = await apiCall('/api/raid/scout');
-            const start = await apiCall('/api/raid/start', { map_id: scout.map_id });
+            scoutData = await apiCall('/api/raid/scout');
+            showScreen('scout');
+            await renderScout();
+        }
+
+        async function renderScout() {
+            if (!scoutData) return;
+            const preview = await apiCall('/api/raid/preview', { map_id: scoutData.map_id });
+            const gridEl = document.getElementById('scout-preview');
+            gridEl.innerHTML = '';
+            preview.grid.forEach((cell, i) => {
+                const cellEl = document.createElement('div');
+                cellEl.className = 'cell';
+                if (cell === 0) cellEl.classList.add('wall');
+                else cellEl.classList.add('sand');
+                gridEl.appendChild(cellEl);
+            });
+            document.getElementById('scout-deaths').textContent = preview.stats.deaths;
+            document.getElementById('scout-wins').textContent = preview.stats.wins;
+            document.getElementById('scout-fee').textContent = preview.fee;
+        }
+
+        async function scoutAnother() {
+            scoutData = await apiCall('/api/raid/scout');
+            await renderScout();
+        }
+
+        async function startRaidFromScout() {
+            if (!scoutData) return;
+            const start = await apiCall('/api/raid/start', { map_id: scoutData.map_id });
             sessionId = start.session_id;
             gameGrid = new Array(48).fill(1);
             start.walls.forEach(i => gameGrid[i] = 0);
+            if (start.revealed_cells) start.revealed_cells.forEach(item => gameGrid[item.index] = item.type);
             showScreen('gameplay');
-            startTimer();
+            if (start.expires_at) {
+                const remaining = Math.max(0, Math.floor((new Date(start.expires_at) - new Date()) / 1000));
+                startTimer(remaining);
+            } else {
+                startTimer();
+            }
             renderGameGrid();
         }
 
@@ -441,6 +497,10 @@
                 else cellEl.classList.add('sand');
                 if (cell !== 0 && cell !== 2) {
                     cellEl.addEventListener('click', () => dig(i));
+                    cellEl.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        dig(i);
+                    });
                 }
                 gridEl.appendChild(cellEl);
             });
@@ -459,7 +519,7 @@
                     showError('Ранен скарабеем!');
                     showScreen('main');
                 } else if (result.status === 'safe') {
-                    gameGrid[index] = 2; // dug
+                    gameGrid[index] = result.cell_type;
                     renderGameGrid();
                     if (result.stage_complete) {
                         document.getElementById('win-modal').classList.add('active');
@@ -470,8 +530,8 @@
             }
         }
 
-        function startTimer() {
-            let time = 120;
+        function startTimer(initialTime = 120) {
+            let time = initialTime;
             timerInterval = setInterval(() => {
                 time--;
                 document.getElementById('timer').textContent = time;

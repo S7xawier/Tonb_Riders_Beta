@@ -302,7 +302,7 @@ def maps_create():
     chest_positions = [i for i, x in enumerate(grid) if x == 4]
     logging.info(f"chest_positions: {chest_positions}")
     if len(chest_positions) != 2:
-        return jsonify({'error': 'Chest must be adjacent'}), 400
+        return jsonify({'error': 'Chest must have exactly two positions'}), 400
     p1, p2 = sorted(chest_positions)
     diff = p2 - p1
     if not ((diff == 1 and p1 // 8 == p2 // 8) or diff == 8):
@@ -374,9 +374,6 @@ def raid_start():
     balance_row = cursor.fetchone()
     balance = balance_row['balance'] if balance_row else 0.0
     fee = 0.0  # Пример, для теста
-    if balance < fee:
-        conn.close()
-        return jsonify({'error': 'Insufficient balance'}), 400
 
     # Проверить существование карты
     cursor.execute('SELECT id FROM maps WHERE id = %s', (map_id,))
@@ -384,29 +381,92 @@ def raid_start():
         conn.close()
         return jsonify({'error': 'Map not found'}), 404
 
-    # Списать fee
-    cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (fee, user_id))
-    cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, -fee, 'raid_entry'))
+    # Проверить активную сессию
+    cursor.execute('SELECT * FROM raid_sessions WHERE player_id = %s AND status = %s', (user_id, 'active'))
+    session = cursor.fetchone()
+    create_new = True
+    if session:
+        if datetime.now() > datetime.fromisoformat(session['expires_at']):
+            cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session['id']))
+        else:
+            # resume
+            session_id = session['id']
+            map_id = session['map_id']
+            dug_history = safe_json_loads(session['dug_history'], [])
+            create_new = False
 
-    # Создать сессию
-    expires_at = datetime.now() + timedelta(seconds=120)
-    cursor.execute('INSERT INTO raid_sessions (player_id, map_id, expires_at) VALUES (%s, %s, %s) RETURNING id', (user_id, map_id, expires_at))
-    session_id = cursor.fetchone()['id']
+    if create_new:
+        if balance < fee:
+            conn.close()
+            return jsonify({'error': 'Insufficient balance'}), 400
+        # Списать fee
+        cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (fee, user_id))
+        cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, -fee, 'raid_entry'))
+        # Создать сессию
+        expires_at = datetime.now() + timedelta(seconds=120)
+        cursor.execute('INSERT INTO raid_sessions (player_id, map_id, expires_at) VALUES (%s, %s, %s) RETURNING id', (user_id, map_id, expires_at))
+        session_id = cursor.fetchone()['id']
+        dug_history = []
 
-    # Получить стены из карты
-    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s', (map_id,))
+    # Получить grid из карты
+    cursor.execute('SELECT grid_json FROM maps WHERE id = %s', (map_id,))
     map_data = cursor.fetchone()
     if not map_data:
         conn.close()
         return jsonify({'error': 'Map not found'}), 404
-    grid = json.loads(map_data['grid_json'])
-    dug = json.loads(map_data['dug_json'])
+    grid = safe_json_loads(map_data['grid_json'], None)
+    if grid is None:
+        conn.close()
+        return jsonify({'error': 'Map data corrupted'}), 500
     walls = [i for i, x in enumerate(grid) if x == 1]
+
+    # Generate revealed_cells
+    revealed_cells = []
+    for idx in dug_history:
+        cell_type = grid[idx]
+        if cell_type in [0, 2, 3, 4]:
+            revealed_cells.append({'index': idx, 'type': cell_type})
 
     conn.commit()
     conn.close()
 
-    return jsonify({'session_id': session_id, 'walls': walls, 'dug': dug})
+    return jsonify({'session_id': session_id, 'walls': walls, 'revealed_cells': revealed_cells})
+
+@app.route('/api/raid/preview', methods=['POST'])
+def raid_preview():
+    user_id = require_auth()
+    if not user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.json
+    map_id = data.get('map_id')
+    if not map_id:
+        return jsonify({'error': 'Missing map_id'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Получить карту
+    cursor.execute('SELECT grid_json FROM maps WHERE id = %s AND active = TRUE', (map_id,))
+    map_data = cursor.fetchone()
+    if not map_data:
+        conn.close()
+        return jsonify({'error': 'Map not found'}), 404
+
+    grid = safe_json_loads(map_data['grid_json'], None)
+    if grid is None:
+        conn.close()
+        return jsonify({'error': 'Map data corrupted'}), 500
+
+    walls = [i for i, x in enumerate(grid) if x == 1]
+
+    # Статистика: заглушка
+    stats = {'deaths': 0, 'wins': 0}
+    fee = 0.0
+
+    conn.close()
+
+    return jsonify({'grid': grid, 'walls': walls, 'stats': stats, 'fee': fee})
 
 @limiter.limit("20 per minute")
 @app.route('/api/raid/dig', methods=['POST'])
