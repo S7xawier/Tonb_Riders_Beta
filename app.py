@@ -308,6 +308,11 @@ def maps_create():
     if not ((diff == 1 and p1 // 8 == p2 // 8) or diff == 8):
         return jsonify({'error': 'Chest must be adjacent horizontally or vertically'}), 400
 
+    # Проверить, что объекты не на стенах (хотя frontend должен предотвращать)
+    for i in range(48):
+        if grid[i] in [2, 3, 4] and grid[i] == 1:
+            return jsonify({'error': 'Objects cannot be placed on walls'}), 400
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
