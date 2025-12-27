@@ -83,6 +83,10 @@ def create_tables():
             username TEXT,
             balance REAL DEFAULT 0.0,
             builder_credits INTEGER DEFAULT 0,
+            total_raids INTEGER DEFAULT 0,
+            total_wins INTEGER DEFAULT 0,
+            total_maps_created INTEGER DEFAULT 0,
+            total_kills INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
