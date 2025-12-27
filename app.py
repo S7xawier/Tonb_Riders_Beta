@@ -472,8 +472,12 @@ def raid_preview():
         else:
             safe_grid.append(9)
 
-    # Статистика: заглушка
-    stats = {'deaths': 0, 'wins': 0}
+    # Статистика: реальный подсчет
+    cursor.execute('SELECT COUNT(*) FROM raid_sessions WHERE map_id = %s AND status = %s', (map_id, 'completed'))
+    wins = cursor.fetchone()['count']
+    cursor.execute('SELECT COUNT(*) FROM raid_sessions WHERE map_id = %s AND status = %s', (map_id, 'dead'))
+    deaths = cursor.fetchone()['count']
+    stats = {'deaths': deaths, 'wins': wins}
     fee = 0.0
 
     conn.close()

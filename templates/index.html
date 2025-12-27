@@ -454,11 +454,18 @@
             const preview = await apiCall('/api/raid/preview', { map_id: scoutData.map_id });
             const gridEl = document.getElementById('scout-preview');
             gridEl.innerHTML = '';
-            preview.safe_grid.forEach((cell, i) => {
+            const grid = preview.safe_grid || preview.grid;
+            grid.forEach((cell, i) => {
                 const cellEl = document.createElement('div');
                 cellEl.className = 'cell';
-                if (cell === 1) cellEl.classList.add('wall');
-                else cellEl.classList.add('sand');
+                if (cell === 1) {
+                    cellEl.classList.add('wall');
+                } else if (cell === 0 || cell === 2 || cell === 4) {
+                    cellEl.classList.add('dug');
+                    cellEl.dataset.type = cell;
+                } else {
+                    cellEl.classList.add('sand');
+                }
                 gridEl.appendChild(cellEl);
             });
             document.getElementById('scout-deaths').textContent = preview.stats.deaths;
