@@ -691,7 +691,8 @@
 
         async function login() {
             try {
-                user = await apiCall('/api/login');
+                const response = await apiCall('/api/login');
+                user = response.user;
                 document.getElementById('username').textContent = user.username;
                 document.getElementById('balance').textContent = user.balance.toFixed(2);
             } catch (e) {
