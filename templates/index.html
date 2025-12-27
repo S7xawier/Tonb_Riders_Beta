@@ -138,6 +138,14 @@
             text-align: center;
             margin-bottom: 10px;
         }
+        .player-info {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        .player-info p {
+            margin: 5px 0;
+        }
         .stats {
             margin-bottom: 10px;
         }
@@ -156,6 +164,10 @@
 <body>
     <div id="main-screen" class="screen active">
         <h1>Pharaoh Online</h1>
+        <div class="player-info">
+            <p>Игрок: <span id="username"></span></p>
+            <p>Баланс: <span id="balance"></span> 💰</p>
+        </div>
         <button onclick="showScreen('editor')">Редактор карт</button>
         <button onclick="startRaid()">Начать рейд</button>
         <button onclick="showScreen('tombs')">Мои гробницы</button>
@@ -230,6 +242,7 @@
         let isDeleteMode = false;
         let chestRotation = 'horizontal';
         let scoutData = null;
+        let user = null;
 
         function showScreen(screen) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -676,9 +689,19 @@
             loadTombs();
         }
 
+        async function login() {
+            try {
+                user = await apiCall('/api/login');
+                document.getElementById('username').textContent = user.username;
+                document.getElementById('balance').textContent = user.balance.toFixed(2);
+            } catch (e) {
+                showError('Ошибка входа: ' + e.message);
+            }
+        }
+
         // Init
         if (tg) tg.ready();
-        apiCall('/api/login'); // login on start
+        login(); // login on start
     </script>
 </body>
 </html>
