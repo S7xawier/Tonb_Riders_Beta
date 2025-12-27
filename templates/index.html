@@ -149,6 +149,16 @@
         .stats {
             margin-bottom: 10px;
         }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
         @media (max-width: 600px) {
             .grid {
                 max-width: 100%;
@@ -171,6 +181,7 @@
         <button onclick="showScreen('editor')">Редактор карт</button>
         <button onclick="startRaid()">Начать рейд</button>
         <button onclick="showScreen('tombs')">Мои гробницы</button>
+        <button onclick="showScreen('profile')">Профиль</button>
     </div>
 
     <div id="editor-screen" class="screen">
@@ -195,6 +206,9 @@
         <h2>Мои гробницы</h2>
         <div id="tombs-list"></div>
         <button onclick="showScreen('main')">Назад</button>
+    </div>
+
+    <div id="profile-screen" class="screen">
     </div>
 
     <div id="scout-screen" class="screen">
@@ -253,6 +267,8 @@
                 loadEditorTemplate();
             } else if (screen === 'tombs') {
                 loadTombs();
+            } else if (screen === 'profile') {
+                loadProfile();
             }
         }
 
@@ -687,6 +703,29 @@
         async function claimTombReward(id) {
             await apiCall('/api/my_tombs/claim', { map_id: id });
             loadTombs();
+        }
+
+        async function loadProfile() {
+            const data = await apiCall('/api/profile');
+            const winRate = data.total_raids > 0 ? (data.wins / data.total_raids) * 100 : 0;
+            const roi = data.expenses > 0 ? (data.net_profit / data.expenses) * 100 : 0;
+            const avgEarnings = data.maps_count > 0 ? data.total_earnings / data.maps_count : 0;
+            const profileScreen = document.getElementById('profile-screen');
+            profileScreen.innerHTML = `
+                <h2>Профиль</h2>
+                <table>
+                    <tr><td>Всего рейдов:</td><td>${data.total_raids}</td></tr>
+                    <tr><td>Побед:</td><td>${data.wins}</td></tr>
+                    <tr><td>Win Rate:</td><td>${winRate.toFixed(2)}%</td></tr>
+                    <tr><td>Расходы:</td><td>${data.expenses}</td></tr>
+                    <tr><td>Чистая прибыль:</td><td>${data.net_profit}</td></tr>
+                    <tr><td>ROI:</td><td>${roi.toFixed(2)}%</td></tr>
+                    <tr><td>Всего карт:</td><td>${data.maps_count}</td></tr>
+                    <tr><td>Общий доход с карт:</td><td>${data.total_earnings}</td></tr>
+                    <tr><td>Средний доход с гробницы:</td><td>${avgEarnings.toFixed(2)}</td></tr>
+                </table>
+                <button onclick="showScreen('main')">Назад</button>
+            `;
         }
 
         async function login() {

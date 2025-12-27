@@ -98,6 +98,7 @@ def create_tables():
             difficulty REAL DEFAULT 1.0,
             active BOOLEAN DEFAULT TRUE,
             is_archived BOOLEAN DEFAULT FALSE,
+            deaths_count INTEGER DEFAULT 0,
             FOREIGN KEY (creator_id) REFERENCES users(id)
         )
     ''')
@@ -662,6 +663,49 @@ def my_tombs_claim():
     conn.close()
 
     return jsonify({'success': True, 'reward': reward})
+
+@app.route('/api/profile', methods=['POST'])
+def profile():
+    user_id = require_auth()
+    if not user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Рейды
+    cursor.execute('SELECT COUNT(*) FROM raid_sessions WHERE player_id = %s', (user_id,))
+    raids_count = cursor.fetchone()['count']
+    cursor.execute('SELECT COUNT(*) FROM raid_sessions WHERE player_id = %s AND status = %s', (user_id, 'completed'))
+    wins_count = cursor.fetchone()['count']
+    cursor.execute('SELECT SUM(amount) FROM transactions WHERE user_id = %s AND type = %s', (user_id, 'raid_entry'))
+    spent_sum = cursor.fetchone()['sum'] or 0.0
+    cursor.execute('SELECT SUM(amount) FROM transactions WHERE user_id = %s AND type = %s', (user_id, 'raid_win'))
+    earned_sum = cursor.fetchone()['sum'] or 0.0
+
+    # Гробницы
+    cursor.execute('SELECT COUNT(*) FROM maps WHERE creator_id = %s', (user_id,))
+    tombs_count = cursor.fetchone()['count']
+    cursor.execute('SELECT SUM(amount) FROM transactions WHERE user_id = %s AND type = %s', (user_id, 'claim'))
+    tombs_earned_sum = cursor.fetchone()['sum'] or 0.0
+    cursor.execute('SELECT SUM(deaths_count) FROM maps WHERE creator_id = %s', (user_id,))
+    deaths_sum = cursor.fetchone()['sum'] or 0
+
+    conn.close()
+
+    return jsonify({
+        'raids': {
+            'count': raids_count,
+            'wins': wins_count,
+            'spent': spent_sum,
+            'earned': earned_sum
+        },
+        'tombs': {
+            'count': tombs_count,
+            'earned': tombs_earned_sum,
+            'deaths': deaths_sum
+        }
+    })
 
 try:
     create_tables()
