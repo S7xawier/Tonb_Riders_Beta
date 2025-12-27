@@ -63,6 +63,9 @@
         .cell.ghost-red {
             background-color: #f44336;
         }
+        .cell.ghost-delete {
+            background-color: #ff9800;
+        }
         .cell[data-type="2"]::before {
             content: "🐍";
         }
@@ -217,6 +220,7 @@
         let ghostIndex = null;
         let potentialPlacement = [];
         let isValidPlacement = false;
+        let isDeleteMode = false;
         let scoutData = null;
 
         function showScreen(screen) {
@@ -332,15 +336,24 @@
                 ghostIndex = null;
                 potentialPlacement = [];
                 isValidPlacement = false;
+                isDeleteMode = false;
                 return;
             }
             ghostIndex = parseInt(target.dataset.index);
-            potentialPlacement = calculatePotentialPlacement(ghostIndex);
-            isValidPlacement = potentialPlacement.length > 0 && potentialPlacement.every(i => editorGrid[i] === 0);
-            if (selectedTool === 'chest' && potentialPlacement.length === 2) {
-                const [i1, i2] = potentialPlacement;
-                isValidPlacement = isValidPlacement && ((editorGrid[i1] === 0 && editorGrid[i2] === 0) || (editorGrid[i1] === 4 && editorGrid[i2] === 4));
-                isValidPlacement = isValidPlacement && !hasChestNeighbors(potentialPlacement);
+            let toolType = selectedTool === 'snake' ? 2 : selectedTool === 'scarab' ? 3 : selectedTool === 'chest' ? 4 : null;
+            if (toolType && editorGrid[ghostIndex] === toolType) {
+                isDeleteMode = true;
+                potentialPlacement = getObjectGroup(ghostIndex);
+                isValidPlacement = true;
+            } else {
+                isDeleteMode = false;
+                potentialPlacement = calculatePotentialPlacement(ghostIndex);
+                isValidPlacement = potentialPlacement.length > 0 && potentialPlacement.every(i => editorGrid[i] === 0);
+                if (selectedTool === 'chest' && potentialPlacement.length === 2) {
+                    const [i1, i2] = potentialPlacement;
+                    isValidPlacement = isValidPlacement && ((editorGrid[i1] === 0 && editorGrid[i2] === 0) || (editorGrid[i1] === 4 && editorGrid[i2] === 4));
+                    isValidPlacement = isValidPlacement && !hasChestNeighbors(potentialPlacement);
+                }
             }
             applyGhostClasses();
         }
@@ -382,14 +395,38 @@
             return false;
         }
 
+        function getObjectGroup(index) {
+            if (editorGrid[index] !== 4) {
+                return [index];
+            }
+            const row = Math.floor(index / 8);
+            const col = index % 8;
+            const neighbors = [];
+            if (row > 0) neighbors.push(index - 8); // up
+            if (row < 5) neighbors.push(index + 8); // down
+            if (col > 0) neighbors.push(index - 1); // left
+            if (col < 7) neighbors.push(index + 1); // right
+            for (let neighbor of neighbors) {
+                if (editorGrid[neighbor] === 4) {
+                    return [index, neighbor];
+                }
+            }
+            // If no neighbor found, though task assumes there is one
+            return [index];
+        }
+
         function applyGhostClasses() {
             potentialPlacement.forEach(i => {
                 const cellEl = document.querySelector(`[data-index="${i}"]`);
                 if (cellEl) {
-                    if (isValidPlacement) {
-                        cellEl.classList.add('ghost-green');
+                    if (isDeleteMode) {
+                        cellEl.classList.add('ghost-delete');
                     } else {
-                        cellEl.classList.add('ghost-red');
+                        if (isValidPlacement) {
+                            cellEl.classList.add('ghost-green');
+                        } else {
+                            cellEl.classList.add('ghost-red');
+                        }
                     }
                 }
             });
@@ -397,15 +434,27 @@
 
         function clearGhost() {
             document.querySelectorAll('.cell').forEach(c => {
-                c.classList.remove('ghost-green', 'ghost-red');
+                c.classList.remove('ghost-green', 'ghost-red', 'ghost-delete');
             });
             ghostIndex = null;
             potentialPlacement = [];
             isValidPlacement = false;
+            isDeleteMode = false;
         }
 
         function commitPotentialPlacement() {
             if (!isValidPlacement || potentialPlacement.length === 0) return;
+            if (isDeleteMode) {
+                const indices = getObjectGroup(potentialPlacement[0]);
+                indices.forEach(index => {
+                    editorGrid[index] = 0;
+                });
+                if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+                updateCounts();
+                renderEditorGrid();
+                clearGhost();
+                return;
+            }
             if (selectedTool === 'chest') {
                 const [i1, i2] = potentialPlacement;
                 if (editorGrid[i1] === 4 && editorGrid[i2] === 4) {
