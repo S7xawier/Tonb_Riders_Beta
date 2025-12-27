@@ -54,6 +54,9 @@
         .cell.sand {
             background-color: #f4e7be;
         }
+        .cell.dug {
+            background-color: #5d4037;
+        }
         .cell.ghost-green {
             background-color: #4caf50;
         }
@@ -451,10 +454,10 @@
             const preview = await apiCall('/api/raid/preview', { map_id: scoutData.map_id });
             const gridEl = document.getElementById('scout-preview');
             gridEl.innerHTML = '';
-            preview.grid.forEach((cell, i) => {
+            preview.safe_grid.forEach((cell, i) => {
                 const cellEl = document.createElement('div');
                 cellEl.className = 'cell';
-                if (cell === 0) cellEl.classList.add('wall');
+                if (cell === 1) cellEl.classList.add('wall');
                 else cellEl.classList.add('sand');
                 gridEl.appendChild(cellEl);
             });
@@ -472,9 +475,7 @@
             if (!scoutData) return;
             const start = await apiCall('/api/raid/start', { map_id: scoutData.map_id });
             sessionId = start.session_id;
-            gameGrid = new Array(48).fill(1);
-            start.walls.forEach(i => gameGrid[i] = 0);
-            if (start.revealed_cells) start.revealed_cells.forEach(item => gameGrid[item.index] = item.type);
+            gameGrid = start.safe_grid;
             showScreen('gameplay');
             if (start.expires_at) {
                 const remaining = Math.max(0, Math.floor((new Date(start.expires_at) - new Date()) / 1000));
@@ -492,15 +493,17 @@
                 const cellEl = document.createElement('div');
                 cellEl.className = 'cell';
                 cellEl.dataset.type = cell;
-                if (cell === 0) cellEl.classList.add('wall');
-                else if (cell === 2) cellEl.classList.add('dug'); // assume dug if not wall
-                else cellEl.classList.add('sand');
-                if (cell !== 0 && cell !== 2) {
+                if (cell === 9) {
+                    cellEl.classList.add('sand');
                     cellEl.addEventListener('click', () => dig(i));
                     cellEl.addEventListener('touchstart', (e) => {
                         e.preventDefault();
                         dig(i);
                     });
+                } else if (cell === 1) {
+                    cellEl.classList.add('wall');
+                } else {
+                    cellEl.classList.add('dug');
                 }
                 gridEl.appendChild(cellEl);
             });
@@ -513,8 +516,12 @@
             try {
                 const result = await apiCall('/api/raid/dig', { session_id: sessionId, cell_index: index });
                 if (result.status === 'dead') {
-                    showError('Вы погибли!');
-                    showScreen('main');
+                    gameGrid[index] = result.cell_type;
+                    renderGameGrid();
+                    setTimeout(() => {
+                        showError('Вы погибли!');
+                        showScreen('main');
+                    }, 1000);
                 } else if (result.status === 'hurt') {
                     showError('Ранен скарабеем!');
                     showScreen('main');

@@ -409,28 +409,31 @@ def raid_start():
         dug_history = []
 
     # Получить grid из карты
-    cursor.execute('SELECT grid_json FROM maps WHERE id = %s', (map_id,))
+    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s', (map_id,))
     map_data = cursor.fetchone()
     if not map_data:
         conn.close()
         return jsonify({'error': 'Map not found'}), 404
     grid = safe_json_loads(map_data['grid_json'], None)
+    dug = safe_json_loads(map_data['dug_json'], [])
     if grid is None:
         conn.close()
         return jsonify({'error': 'Map data corrupted'}), 500
-    walls = [i for i, x in enumerate(grid) if x == 1]
 
-    # Generate revealed_cells
-    revealed_cells = []
-    for idx in dug_history:
-        cell_type = grid[idx]
-        if cell_type in [0, 2, 3, 4]:
-            revealed_cells.append({'index': idx, 'type': cell_type})
+    # Создать safe_grid
+    safe_grid = []
+    for i in range(48):
+        if i in dug:
+            safe_grid.append(grid[i])
+        elif grid[i] == 1:
+            safe_grid.append(1)
+        else:
+            safe_grid.append(9)
 
     conn.commit()
     conn.close()
 
-    return jsonify({'session_id': session_id, 'walls': walls, 'revealed_cells': revealed_cells})
+    return jsonify({'session_id': session_id, 'safe_grid': safe_grid})
 
 @app.route('/api/raid/preview', methods=['POST'])
 def raid_preview():
@@ -447,18 +450,27 @@ def raid_preview():
     cursor = conn.cursor()
 
     # Получить карту
-    cursor.execute('SELECT grid_json FROM maps WHERE id = %s AND active = TRUE', (map_id,))
+    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s AND active = TRUE', (map_id,))
     map_data = cursor.fetchone()
     if not map_data:
         conn.close()
         return jsonify({'error': 'Map not found'}), 404
 
     grid = safe_json_loads(map_data['grid_json'], None)
+    dug = safe_json_loads(map_data['dug_json'], [])
     if grid is None:
         conn.close()
         return jsonify({'error': 'Map data corrupted'}), 500
 
-    walls = [i for i, x in enumerate(grid) if x == 1]
+    # Создать safe_grid
+    safe_grid = []
+    for i in range(48):
+        if i in dug:
+            safe_grid.append(grid[i])
+        elif grid[i] == 1:
+            safe_grid.append(1)
+        else:
+            safe_grid.append(9)
 
     # Статистика: заглушка
     stats = {'deaths': 0, 'wins': 0}
@@ -466,7 +478,7 @@ def raid_preview():
 
     conn.close()
 
-    return jsonify({'grid': grid, 'walls': walls, 'stats': stats, 'fee': fee})
+    return jsonify({'safe_grid': safe_grid, 'stats': stats, 'fee': fee})
 
 @limiter.limit("20 per minute")
 @app.route('/api/raid/dig', methods=['POST'])
@@ -524,7 +536,7 @@ def raid_dig():
         cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
         conn.commit()
         conn.close()
-        return jsonify({'status': 'dead', 'reward': 0})
+        return jsonify({'status': 'dead', 'cell_type': 2, 'reward': 0})
 
     elif cell_type == 3:  # Дыра
         cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('hurt', session_id))
@@ -546,7 +558,7 @@ def raid_dig():
 
         conn.commit()
         conn.close()
-        return jsonify({'status': 'safe', 'reward': reward, 'stage_complete': stage_complete})
+        return jsonify({'status': 'safe', 'cell_type': cell_type, 'reward': reward, 'stage_complete': stage_complete})
 
 @app.route('/api/raid/leave', methods=['POST'])
 def raid_leave():
