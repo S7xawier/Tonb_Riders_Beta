@@ -340,6 +340,7 @@
             if (selectedTool === 'chest' && potentialPlacement.length === 2) {
                 const [i1, i2] = potentialPlacement;
                 isValidPlacement = isValidPlacement && ((editorGrid[i1] === 0 && editorGrid[i2] === 0) || (editorGrid[i1] === 4 && editorGrid[i2] === 4));
+                isValidPlacement = isValidPlacement && !hasChestNeighbors(potentialPlacement);
             }
             applyGhostClasses();
         }
@@ -361,6 +362,24 @@
             } else {
                 return [index];
             }
+        }
+
+        function hasChestNeighbors(indices) {
+            for (let index of indices) {
+                const row = Math.floor(index / 8);
+                const col = index % 8;
+                const neighbors = [];
+                if (row > 0) neighbors.push(index - 8); // up
+                if (row < 5) neighbors.push(index + 8); // down
+                if (col > 0) neighbors.push(index - 1); // left
+                if (col < 7) neighbors.push(index + 1); // right
+                for (let neighbor of neighbors) {
+                    if (editorGrid[neighbor] === 4 && !indices.includes(neighbor)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         function applyGhostClasses() {
