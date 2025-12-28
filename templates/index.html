@@ -106,75 +106,98 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0,0,0,0.5);
+            background-color: rgba(0,0,0,0.7);
+            backdrop-filter: blur(10px);
             display: flex;
             align-items: center;
             justify-content: center;
             display: none;
+            transition: opacity 0.3s ease;
         }
         .modal.active {
             display: flex;
+            opacity: 1;
         }
         .modal-content {
             background-color: #fff;
             padding: 20px;
-            border-radius: 15px;
+            border-radius: 20px;
             text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            max-width: 500px;
+            width: 90%;
         }
         .onboarding-content {
-            background: linear-gradient(135deg, #f4e4bc 0%, #d4af37 50%, #b8860b 100%);
-            color: #8b4513;
+            background: linear-gradient(135deg, #2c1810 0%, #5d4e37 50%, #8b7355 100%);
+            color: #f4e4bc;
             font-family: 'Times New Roman', serif;
-            border: 3px solid #daa520;
-            border-radius: 15px;
-            box-shadow: 0 0 20px rgba(218, 165, 32, 0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-            padding: 30px;
+            border: 2px solid #daa520;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+            padding: 40px;
+            position: relative;
+        }
+        .onboarding-content::before {
+            content: "𓀀";
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            font-size: 24px;
+            color: #daa520;
+            opacity: 0.5;
         }
         .onboarding-content h3 {
             color: #daa520;
-            text-shadow: 1px 1px 2px #000;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
             font-weight: bold;
-            margin-bottom: 15px;
+            font-size: 32px;
+            margin-bottom: 20px;
         }
         .onboarding-content p {
-            margin-bottom: 20px;
-            text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+            font-size: 18px;
+            margin-bottom: 30px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
         }
         .onboarding-content input {
-            padding: 12px;
-            margin: 10px 0;
+            padding: 15px;
+            margin: 15px 0;
             border: 2px solid #daa520;
-            border-radius: 8px;
-            background-color: #fff8dc;
+            border-radius: 12px;
+            background-color: rgba(255, 255, 255, 0.9);
             font-size: 16px;
             width: 100%;
-            max-width: 300px;
+            max-width: 350px;
             box-sizing: border-box;
-            transition: border-color 0.3s, box-shadow 0.3s;
+            transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+            text-align: center;
         }
         .onboarding-content input:focus {
             outline: none;
             border-color: #b8860b;
-            box-shadow: 0 0 8px rgba(218, 165, 32, 0.6);
+            box-shadow: 0 0 12px rgba(218, 165, 32, 0.8);
+            transform: scale(1.02);
         }
         .onboarding-content button {
-            background: linear-gradient(to bottom, #daa520, #b8860b);
+            background: linear-gradient(135deg, #daa520, #b8860b);
             color: #8b4513;
             border: 2px solid #b8860b;
-            padding: 12px 24px;
+            padding: 15px 30px;
             font-weight: bold;
+            font-size: 16px;
             cursor: pointer;
-            border-radius: 8px;
-            transition: background 0.3s, transform 0.2s;
-            text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+            border-radius: 12px;
+            transition: background 0.3s, transform 0.2s, box-shadow 0.3s;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            text-align: center;
         }
         .onboarding-content button:hover {
-            background: linear-gradient(to bottom, #b8860b, #daa520);
-            transform: translateY(-2px);
+            background: linear-gradient(135deg, #b8860b, #daa520);
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(218, 165, 32, 0.4);
         }
         .onboarding-content button:active {
             transform: translateY(0);
+            box-shadow: 0 2px 5px rgba(218, 165, 32, 0.4);
         }
         .error {
             color: #d32f2f;
