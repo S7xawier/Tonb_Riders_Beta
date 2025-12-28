@@ -118,38 +118,63 @@
         .modal-content {
             background-color: #fff;
             padding: 20px;
-            border-radius: 5px;
+            border-radius: 15px;
             text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
         .onboarding-content {
-            background: linear-gradient(to bottom, #f4e4bc, #d4af37);
+            background: linear-gradient(135deg, #f4e4bc 0%, #d4af37 50%, #b8860b 100%);
             color: #8b4513;
             font-family: 'Times New Roman', serif;
             border: 3px solid #daa520;
-            box-shadow: 0 0 20px rgba(218, 165, 32, 0.5);
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(218, 165, 32, 0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+            padding: 30px;
         }
         .onboarding-content h3 {
             color: #daa520;
             text-shadow: 1px 1px 2px #000;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .onboarding-content p {
+            margin-bottom: 20px;
+            text-shadow: 0 1px 1px rgba(0,0,0,0.3);
         }
         .onboarding-content input {
-            padding: 10px;
+            padding: 12px;
             margin: 10px 0;
             border: 2px solid #daa520;
-            border-radius: 5px;
+            border-radius: 8px;
             background-color: #fff8dc;
             font-size: 16px;
+            width: 100%;
+            max-width: 300px;
+            box-sizing: border-box;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .onboarding-content input:focus {
+            outline: none;
+            border-color: #b8860b;
+            box-shadow: 0 0 8px rgba(218, 165, 32, 0.6);
         }
         .onboarding-content button {
-            background-color: #daa520;
+            background: linear-gradient(to bottom, #daa520, #b8860b);
             color: #8b4513;
             border: 2px solid #b8860b;
-            padding: 10px 20px;
+            padding: 12px 24px;
             font-weight: bold;
             cursor: pointer;
+            border-radius: 8px;
+            transition: background 0.3s, transform 0.2s;
+            text-shadow: 0 1px 1px rgba(0,0,0,0.3);
         }
         .onboarding-content button:hover {
-            background-color: #b8860b;
+            background: linear-gradient(to bottom, #b8860b, #daa520);
+            transform: translateY(-2px);
+        }
+        .onboarding-content button:active {
+            transform: translateY(0);
         }
         .error {
             color: #d32f2f;
@@ -275,10 +300,10 @@
 
     <div id="onboarding-modal" class="modal">
         <div class="modal-content onboarding-content">
-            <h3>Welcome to Pharaoh Online!</h3>
-            <p>Choose your username:</p>
-            <input type="text" id="username-input" placeholder="Username (3-12 chars)">
-            <button id="onboard-btn">Start Adventure</button>
+            <h3>Пробудись, Фараон.</h3>
+            <p>Выберите имя пользователя:</p>
+            <input type="text" id="username-input" placeholder="Имя">
+            <button id="onboard-btn">Вписать имя в историю</button>
             <p id="onboard-error" class="error"></p>
         </div>
     </div>
@@ -834,15 +859,15 @@
             errorEl.textContent = '';
 
             if (!username) {
-                errorEl.textContent = 'Username cannot be empty';
+                errorEl.textContent = 'Имя пользователя не может быть пустым';
                 return;
             }
             if (username.length < 3 || username.length > 12) {
-                errorEl.textContent = 'Username must be 3-12 characters';
+                errorEl.textContent = 'Имя пользователя должно быть от 3 до 12 символов';
                 return;
             }
             if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-                errorEl.textContent = 'Username can only contain letters, numbers, and underscores';
+                errorEl.textContent = 'Имя пользователя может содержать только буквы, цифры и подчеркивания';
                 return;
             }
 
