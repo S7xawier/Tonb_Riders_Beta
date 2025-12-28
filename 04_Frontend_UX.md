@@ -51,3 +51,18 @@
 Статистика: "Убито: 5", "Заработано: 2.5 TON".
 
 Кнопка "Забрать награду" (активна, если есть pending_balance).
+
+## Отправка X-Init-Data header
+
+Все API запросы отправляются с заголовком 'X-Init-Data', содержащим initData из Telegram.WebApp.initData. Это позволяет серверу аутентифицировать пользователя и извлекать user_id.
+
+## Валидация ответов API
+
+Frontend валидирует ответы от сервера для обеспечения корректности данных:
+
+- validateUser: Проверяет объект user на наличие id (number), username (string), balance (number).
+- validateGameGrid: Проверяет массив safe_grid на длину 48 и типы элементов (numbers).
+- validatePreview: Проверяет объект preview на safe_grid, stats (deaths, wins numbers), fee (number).
+- validateTombs: Проверяет массив tombs на объекты с id (number), deaths (number), earnings (number), can_claim (boolean).
+
+При ошибке валидации бросается исключение, которое отображается в error-modal.

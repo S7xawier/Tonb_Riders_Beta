@@ -43,7 +43,7 @@ class TestValidateInitData(unittest.TestCase):
     def test_valid_init_data(self):
         data = {'user': '{"id":123,"username":"test"}', 'auth_date': str(int(time.time()))}
         init_data = self._create_init_data(data)
-        result = self.validate_init_data(init_data)
+        result = validate_init_data(init_data)
         self.assertEqual(result, 123)
 
     def test_invalid_hash(self):
@@ -56,25 +56,25 @@ class TestValidateInitData(unittest.TestCase):
                 parts[i] = 'hash=invalid'
                 break
         invalid_init_data = '&'.join(parts)
-        result = self.validate_init_data(invalid_init_data)
+        result = validate_init_data(invalid_init_data)
         self.assertIsNone(result)
 
     def test_missing_hash(self):
         data = {'user': '{"id":123,"username":"test"}', 'auth_date': '123456'}
         init_data = self._create_init_data(data, include_hash=False)
-        result = self.validate_init_data(init_data)
+        result = validate_init_data(init_data)
         self.assertIsNone(result)
 
     def test_malformed_user_json(self):
         data = {'user': 'invalid json', 'auth_date': '123456'}
         init_data = self._create_init_data(data)
-        result = self.validate_init_data(init_data)
+        result = validate_init_data(init_data)
         self.assertIsNone(result)
 
     def test_missing_user(self):
         data = {'auth_date': '123456'}
         init_data = self._create_init_data(data)
-        result = self.validate_init_data(init_data)
+        result = validate_init_data(init_data)
         self.assertIsNone(result)
 
 

@@ -5,8 +5,7 @@ import hmac
 import logging
 import time
 import urllib.parse
-import psycopg2
-import psycopg2.extras
+import sqlite3
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -31,9 +30,10 @@ limiter = Limiter(
 
 # Конфигурация DB
 def get_db_connection():
-    logging.info(f"DATABASE_URL is {'set' if 'DATABASE_URL' in os.environ else 'not set'}")
     try:
-        return psycopg2.connect(os.environ['DATABASE_URL'], cursor_factory=psycopg2.extras.RealDictCursor)
+        conn = sqlite3.connect('test.db')
+        conn.row_factory = sqlite3.Row
+        return conn
     except Exception as e:
         logging.error(f"Database connection error: {e}")
         raise
@@ -63,6 +63,8 @@ def migrate_tables():
         # В social
         cursor.execute('ALTER TABLE social ALTER COLUMN user_id TYPE BIGINT')
         cursor.execute('ALTER TABLE social ALTER COLUMN friend_id TYPE BIGINT')
+        # Добавить столбец is_setup_complete, если его нет
+        cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_setup_complete BOOLEAN DEFAULT FALSE')
         conn.commit()
         logging.info("Tables migrated successfully")
     except Exception as e:
@@ -79,7 +81,7 @@ def create_tables():
     # Users
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id BIGINT PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             username TEXT,
             balance REAL DEFAULT 0.0,
             builder_credits INTEGER DEFAULT 0,
@@ -87,7 +89,8 @@ def create_tables():
             total_wins INTEGER DEFAULT 0,
             total_maps_created INTEGER DEFAULT 0,
             total_kills INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            is_setup_complete INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_id ON users(id)')
@@ -95,13 +98,13 @@ def create_tables():
     # Maps
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS maps (
-            id SERIAL PRIMARY KEY,
-            creator_id BIGINT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            creator_id INTEGER,
             grid_json TEXT,
             dug_json TEXT DEFAULT '[]',
             difficulty REAL DEFAULT 1.0,
-            active BOOLEAN DEFAULT TRUE,
-            is_archived BOOLEAN DEFAULT FALSE,
+            active INTEGER DEFAULT 1,
+            is_archived INTEGER DEFAULT 0,
             deaths_count INTEGER DEFAULT 0,
             FOREIGN KEY (creator_id) REFERENCES users(id)
         )
@@ -112,15 +115,15 @@ def create_tables():
     # RaidSessions
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS raid_sessions (
-            id SERIAL PRIMARY KEY,
-            player_id BIGINT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER,
             map_id INTEGER,
             current_stage INTEGER DEFAULT 1,
             status TEXT DEFAULT 'active',
             earnings_buffer REAL DEFAULT 0.0,
             dug_history TEXT DEFAULT '[]',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMP,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            expires_at TEXT,
             FOREIGN KEY (player_id) REFERENCES users(id),
             FOREIGN KEY (map_id) REFERENCES maps(id)
         )
@@ -131,11 +134,11 @@ def create_tables():
     # Transactions
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             amount REAL,
             type TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     ''')
@@ -144,9 +147,9 @@ def create_tables():
     # Social
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS social (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT,
-            friend_id BIGINT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            friend_id INTEGER,
             status TEXT DEFAULT 'pending',
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (friend_id) REFERENCES users(id)
@@ -235,17 +238,17 @@ def login():
         cursor = conn.cursor()
 
         # Проверить, есть ли пользователь
-        cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+        cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
         user = cursor.fetchone()
 
         if not user:
             # Создать нового пользователя
-            cursor.execute('INSERT INTO users (id, username, balance, builder_credits) VALUES (%s, %s, 1.0, 5)', (user_id, f'user_{user_id}'))
+            cursor.execute('INSERT INTO users (id, username, balance, builder_credits) VALUES (?, ?, 1.0, 5)', (user_id, f'user_{user_id}'))
             conn.commit()
-            user = {'id': user_id, 'username': f'user_{user_id}', 'balance': 1.0, 'builder_credits': 5}
+            user = {'id': user_id, 'username': f'user_{user_id}', 'balance': 1.0, 'builder_credits': 5, 'is_setup_complete': False}
 
         # Проверить активную сессию
-        cursor.execute('SELECT * FROM raid_sessions WHERE player_id = %s AND status = %s', (user_id, 'active'))
+        cursor.execute('SELECT * FROM raid_sessions WHERE player_id = ? AND status = ?', (user_id, 'active'))
         session = cursor.fetchone()
 
         conn.close()
@@ -322,17 +325,17 @@ def maps_create():
     cursor = conn.cursor()
 
     # Проверить кредиты
-    cursor.execute('SELECT builder_credits FROM users WHERE id = %s', (user_id,))
+    cursor.execute('SELECT builder_credits FROM users WHERE id = ?', (user_id,))
     credits_row = cursor.fetchone()
     if not credits_row or credits_row['builder_credits'] <= 0:
         conn.close()
         return jsonify({'error': 'No credits'}), 400
 
     # Списать кредит
-    cursor.execute('UPDATE users SET builder_credits = builder_credits - 1 WHERE id = %s', (user_id,))
+    cursor.execute('UPDATE users SET builder_credits = builder_credits - 1 WHERE id = ?', (user_id,))
 
     # Сохранить карту
-    cursor.execute('INSERT INTO maps (creator_id, grid_json) VALUES (%s, %s)', (user_id, json.dumps(grid)))
+    cursor.execute('INSERT INTO maps (creator_id, grid_json) VALUES (?, ?)', (user_id, json.dumps(grid)))
 
     conn.commit()
     conn.close()
@@ -349,7 +352,7 @@ def raid_scout():
     cursor = conn.cursor()
 
     # Найти случайную карту
-    cursor.execute('SELECT id, creator_id FROM maps WHERE active = TRUE AND creator_id != %s ORDER BY RANDOM() LIMIT 1', (user_id,))
+    cursor.execute('SELECT id, creator_id FROM maps WHERE active = TRUE AND creator_id != ? ORDER BY RANDOM() LIMIT 1', (user_id,))
     map_row = cursor.fetchone()
     if not map_row:
         conn.close()
@@ -380,24 +383,27 @@ def raid_start():
     cursor = conn.cursor()
 
     # Проверить баланс
-    cursor.execute('SELECT balance FROM users WHERE id = %s', (user_id,))
+    cursor.execute('SELECT balance FROM users WHERE id = ?', (user_id,))
     balance_row = cursor.fetchone()
     balance = balance_row['balance'] if balance_row else 0.0
     fee = 0.0  # Пример, для теста
 
     # Проверить существование карты
-    cursor.execute('SELECT id FROM maps WHERE id = %s', (map_id,))
+    cursor.execute('SELECT id FROM maps WHERE id = ?', (map_id,))
     if not cursor.fetchone():
         conn.close()
         return jsonify({'error': 'Map not found'}), 404
 
     # Проверить активную сессию
-    cursor.execute('SELECT * FROM raid_sessions WHERE player_id = %s AND status = %s', (user_id, 'active'))
+    cursor.execute('SELECT * FROM raid_sessions WHERE player_id = ? AND status = ?', (user_id, 'active'))
     session = cursor.fetchone()
     create_new = True
     if session:
-        if datetime.now() > session['expires_at']:
-            cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session['id']))
+        expires_at = session['expires_at']
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at)
+        if datetime.now() > expires_at:
+            cursor.execute('UPDATE raid_sessions SET status = ? WHERE id = ?', ('timeout', session['id']))
         else:
             # resume
             session_id = session['id']
@@ -410,16 +416,16 @@ def raid_start():
             conn.close()
             return jsonify({'error': 'Insufficient balance'}), 400
         # Списать fee
-        cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (fee, user_id))
-        cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, -fee, 'raid_entry'))
+        cursor.execute('UPDATE users SET balance = balance - ? WHERE id = ?', (fee, user_id))
+        cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (?, ?, ?)', (user_id, -fee, 'raid_entry'))
         # Создать сессию
         expires_at = datetime.now() + timedelta(seconds=120)
-        cursor.execute('INSERT INTO raid_sessions (player_id, map_id, expires_at) VALUES (%s, %s, %s) RETURNING id', (user_id, map_id, expires_at))
-        session_id = cursor.fetchone()['id']
+        cursor.execute('INSERT INTO raid_sessions (player_id, map_id, expires_at) VALUES (?, ?, ?)', (user_id, map_id, expires_at.isoformat()))
+        session_id = cursor.lastrowid
         dug_history = []
 
     # Получить grid из карты
-    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s', (map_id,))
+    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = ?', (map_id,))
     map_data = cursor.fetchone()
     if not map_data:
         conn.close()
@@ -460,7 +466,7 @@ def raid_preview():
     cursor = conn.cursor()
 
     # Получить карту
-    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s AND active = TRUE', (map_id,))
+    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = ? AND active = TRUE', (map_id,))
     map_data = cursor.fetchone()
     if not map_data:
         conn.close()
@@ -483,9 +489,9 @@ def raid_preview():
             safe_grid.append(9)
 
     # Статистика: реальный подсчет
-    cursor.execute('SELECT COUNT(*) FROM raid_sessions WHERE map_id = %s AND status = %s', (map_id, 'completed'))
+    cursor.execute('SELECT COUNT(*) AS count FROM raid_sessions WHERE map_id = ? AND status = ?', (map_id, 'completed'))
     wins = cursor.fetchone()['count']
-    cursor.execute('SELECT COUNT(*) FROM raid_sessions WHERE map_id = %s AND status = %s', (map_id, 'dead'))
+    cursor.execute('SELECT COUNT(*) AS count FROM raid_sessions WHERE map_id = ? AND status = ?', (map_id, 'dead'))
     deaths = cursor.fetchone()['count']
     stats = {'deaths': deaths, 'wins': wins}
     fee = 0.0
@@ -511,14 +517,17 @@ def raid_dig():
     cursor = conn.cursor()
 
     # Получить сессию
-    cursor.execute('SELECT * FROM raid_sessions WHERE id = %s AND player_id = %s', (session_id, user_id))
+    cursor.execute('SELECT * FROM raid_sessions WHERE id = ? AND player_id = ?', (session_id, user_id))
     session = cursor.fetchone()
     if not session:
         conn.close()
         return jsonify({'error': 'Session not found'}), 404
 
-    if datetime.now() > session['expires_at']:
-        cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session_id))
+    expires_at = session['expires_at']
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if datetime.now() > expires_at:
+        cursor.execute('UPDATE raid_sessions SET status = ? WHERE id = ?', ('timeout', session_id))
         conn.commit()
         conn.close()
         return jsonify({'status': 'timeout'})
@@ -531,7 +540,7 @@ def raid_dig():
         return jsonify({'error': 'Cell already dug'}), 400
 
     # Получить карту
-    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s', (map_id,))
+    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = ?', (map_id,))
     map_data = cursor.fetchone()
     grid = safe_json_loads(map_data['grid_json'], None)
     if grid is None:
@@ -545,15 +554,15 @@ def raid_dig():
     cell_type = grid[cell_index]
 
     if cell_type == 2:  # Змея
-        cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('dead', session_id))
+        cursor.execute('UPDATE raid_sessions SET status = ? WHERE id = ?', ('dead', session_id))
         dug.append(cell_index)  # Добавить череп
-        cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
+        cursor.execute('UPDATE maps SET dug_json = ? WHERE id = ?', (json.dumps(dug), map_id))
         conn.commit()
         conn.close()
         return jsonify({'status': 'dead', 'cell_type': 2, 'reward': 0})
 
     elif cell_type == 3:  # Дыра
-        cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('hurt', session_id))
+        cursor.execute('UPDATE raid_sessions SET status = ? WHERE id = ?', ('hurt', session_id))
         conn.commit()
         conn.close()
         return jsonify({'status': 'hurt'})
@@ -561,9 +570,9 @@ def raid_dig():
     else:  # Сундук или пусто
         reward = 0.05 if cell_type == 4 else 0.01  # Пример
         earnings_buffer = session['earnings_buffer'] + reward
-        cursor.execute('UPDATE raid_sessions SET earnings_buffer = %s, dug_history = %s WHERE id = %s', (earnings_buffer, json.dumps(dug_history + [cell_index]), session_id))
+        cursor.execute('UPDATE raid_sessions SET earnings_buffer = ?, dug_history = ? WHERE id = ?', (earnings_buffer, json.dumps(dug_history + [cell_index]), session_id))
         dug.append(cell_index)
-        cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
+        cursor.execute('UPDATE maps SET dug_json = ? WHERE id = ?', (json.dumps(dug), map_id))
 
         # Проверка победы
         safe_cells = sum(1 for x in grid if x in [0, 4])
@@ -586,16 +595,16 @@ def raid_leave():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT earnings_buffer FROM raid_sessions WHERE id = %s AND player_id = %s', (session_id, user_id))
+    cursor.execute('SELECT earnings_buffer FROM raid_sessions WHERE id = ? AND player_id = ?', (session_id, user_id))
     session = cursor.fetchone()
     if not session:
         conn.close()
         return jsonify({'error': 'Session not found'}), 404
 
     earnings = session['earnings_buffer']
-    cursor.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (earnings, user_id))
-    cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, earnings, 'raid_win'))
-    cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('completed', session_id))
+    cursor.execute('UPDATE users SET balance = balance + ? WHERE id = ?', (earnings, user_id))
+    cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (?, ?, ?)', (user_id, earnings, 'raid_win'))
+    cursor.execute('UPDATE raid_sessions SET status = ? WHERE id = ?', ('completed', session_id))
 
     conn.commit()
     conn.close()
@@ -611,7 +620,7 @@ def my_tombs():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT id, dug_json, grid_json FROM maps WHERE creator_id = %s', (user_id,))
+    cursor.execute('SELECT id, dug_json, grid_json FROM maps WHERE creator_id = ?', (user_id,))
     tombs = cursor.fetchall()
 
     result = []
@@ -642,7 +651,7 @@ def my_tombs_claim():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s AND creator_id = %s', (map_id, user_id))
+    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = ? AND creator_id = ?', (map_id, user_id))
     map_data = cursor.fetchone()
     if not map_data:
         conn.close()
@@ -656,12 +665,12 @@ def my_tombs_claim():
         return jsonify({'error': 'Not ready to claim'}), 400
 
     # Деактивировать карту
-    cursor.execute('UPDATE maps SET active = FALSE WHERE id = %s', (map_id,))
+    cursor.execute('UPDATE maps SET active = FALSE WHERE id = ?', (map_id,))
 
     # Награда: заглушка
     reward = 1.0
-    cursor.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (reward, user_id))
-    cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, reward, 'claim'))
+    cursor.execute('UPDATE users SET balance = balance + ? WHERE id = ?', (reward, user_id))
+    cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (?, ?, ?)', (user_id, reward, 'claim'))
 
     conn.commit()
     conn.close()
@@ -678,21 +687,21 @@ def profile():
     cursor = conn.cursor()
 
     # Рейды
-    cursor.execute('SELECT COUNT(*) FROM raid_sessions WHERE player_id = %s', (user_id,))
+    cursor.execute('SELECT COUNT(*) AS count FROM raid_sessions WHERE player_id = ?', (user_id,))
     raids_count = cursor.fetchone()['count']
-    cursor.execute('SELECT COUNT(*) FROM raid_sessions WHERE player_id = %s AND status = %s', (user_id, 'completed'))
+    cursor.execute('SELECT COUNT(*) AS count FROM raid_sessions WHERE player_id = ? AND status = ?', (user_id, 'completed'))
     wins_count = cursor.fetchone()['count']
-    cursor.execute('SELECT SUM(amount) FROM transactions WHERE user_id = %s AND type = %s', (user_id, 'raid_entry'))
-    spent_sum = cursor.fetchone()['sum'] or 0.0
-    cursor.execute('SELECT SUM(amount) FROM transactions WHERE user_id = %s AND type = %s', (user_id, 'raid_win'))
+    cursor.execute('SELECT SUM(amount) AS sum FROM transactions WHERE user_id = ? AND type = ?', (user_id, 'raid_entry'))
+    spent_sum = abs(cursor.fetchone()['sum'] or 0.0)
+    cursor.execute('SELECT SUM(amount) AS sum FROM transactions WHERE user_id = ? AND type = ?', (user_id, 'raid_win'))
     earned_sum = cursor.fetchone()['sum'] or 0.0
 
     # Гробницы
-    cursor.execute('SELECT COUNT(*) FROM maps WHERE creator_id = %s', (user_id,))
+    cursor.execute('SELECT COUNT(*) AS count FROM maps WHERE creator_id = ?', (user_id,))
     tombs_count = cursor.fetchone()['count']
-    cursor.execute('SELECT SUM(amount) FROM transactions WHERE user_id = %s AND type = %s', (user_id, 'claim'))
+    cursor.execute('SELECT SUM(amount) AS sum FROM transactions WHERE user_id = ? AND type = ?', (user_id, 'claim'))
     tombs_earned_sum = cursor.fetchone()['sum'] or 0.0
-    cursor.execute('SELECT SUM(deaths_count) FROM maps WHERE creator_id = %s', (user_id,))
+    cursor.execute('SELECT SUM(deaths_count) AS sum FROM maps WHERE creator_id = ?', (user_id,))
     deaths_sum = cursor.fetchone()['sum'] or 0
 
     conn.close()
@@ -711,12 +720,58 @@ def profile():
         }
     })
 
+@app.route('/api/onboard', methods=['POST'])
+def onboard():
+    user_id = require_auth()
+    if not user_id:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.json
+    username = data.get('username')
+    if not username:
+        return jsonify({'error': 'Username required'}), 400
+
+    # Валидация username: длина 3-12, только буквы, цифры, _
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]{3,12}$', username):
+        return jsonify({'error': 'Invalid username format'}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Проверить уникальность
+        cursor.execute('SELECT id FROM users WHERE username = ? AND id != ?', (username, user_id))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'Username already taken'}), 400
+
+        # Проверить, что пользователь не завершен setup
+        cursor.execute('SELECT is_setup_complete FROM users WHERE id = ?', (user_id,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+        if user_row['is_setup_complete']:
+            conn.close()
+            return jsonify({'error': 'Already onboarded'}), 400
+
+        # Обновить username и is_setup_complete
+        cursor.execute('UPDATE users SET username = ?, is_setup_complete = TRUE WHERE id = ?', (username, user_id))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        logging.error(f"Error in onboard: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 try:
     create_tables()
-    migrate_tables()
-    logging.info("Tables created and migrated successfully")
+    # migrate_tables()
+    logging.info("Tables created successfully")
 except Exception as e:
-    logging.error(f"Error creating/migrating tables: {e}")
+    logging.error(f"Error creating tables: {e}")
 
 @app.errorhandler(500)
 def internal_error(error):

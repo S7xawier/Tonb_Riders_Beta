@@ -121,6 +121,40 @@
             border-radius: 5px;
             text-align: center;
         }
+        .onboarding-content {
+            background: linear-gradient(to bottom, #f4e4bc, #d4af37);
+            color: #8b4513;
+            font-family: 'Times New Roman', serif;
+            border: 3px solid #daa520;
+            box-shadow: 0 0 20px rgba(218, 165, 32, 0.5);
+        }
+        .onboarding-content h3 {
+            color: #daa520;
+            text-shadow: 1px 1px 2px #000;
+        }
+        .onboarding-content input {
+            padding: 10px;
+            margin: 10px 0;
+            border: 2px solid #daa520;
+            border-radius: 5px;
+            background-color: #fff8dc;
+            font-size: 16px;
+        }
+        .onboarding-content button {
+            background-color: #daa520;
+            color: #8b4513;
+            border: 2px solid #b8860b;
+            padding: 10px 20px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .onboarding-content button:hover {
+            background-color: #b8860b;
+        }
+        .error {
+            color: #d32f2f;
+            font-weight: bold;
+        }
         button {
             padding: 10px 20px;
             margin: 5px;
@@ -239,6 +273,16 @@
         </div>
     </div>
 
+    <div id="onboarding-modal" class="modal">
+        <div class="modal-content onboarding-content">
+            <h3>Welcome to Pharaoh Online!</h3>
+            <p>Choose your username:</p>
+            <input type="text" id="username-input" placeholder="Username (3-12 chars)">
+            <button id="onboard-btn">Start Adventure</button>
+            <p id="onboard-error" class="error"></p>
+        </div>
+    </div>
+
     <script>
         const tg = window.Telegram?.WebApp;
         const initData = tg ? tg.initData : 'mock_init_data'; // Mock for testing outside Telegram
@@ -258,6 +302,32 @@
         let scoutData = null;
         let user = null;
 
+        function validateUser(user) {
+            if (!user || typeof user !== 'object') throw new Error('Invalid user structure');
+            if (typeof user.id !== 'number' || typeof user.username !== 'string' || typeof user.balance !== 'number') throw new Error('Invalid user fields');
+        }
+
+        function validateGameGrid(grid) {
+            if (!Array.isArray(grid) || grid.length !== 48) throw new Error('Invalid gameGrid structure');
+            for (let cell of grid) {
+                if (typeof cell !== 'number') throw new Error('Invalid cell type in gameGrid');
+            }
+        }
+
+        function validatePreview(preview) {
+            if (!preview || typeof preview !== 'object') throw new Error('Invalid preview structure');
+            validateGameGrid(preview.safe_grid);
+            if (!preview.stats || typeof preview.stats !== 'object' || typeof preview.stats.deaths !== 'number' || typeof preview.stats.wins !== 'number') throw new Error('Invalid stats in preview');
+            if (typeof preview.fee !== 'number') throw new Error('Invalid fee in preview');
+        }
+
+        function validateTombs(tombs) {
+            if (!Array.isArray(tombs)) throw new Error('Invalid tombs structure');
+            for (let tomb of tombs) {
+                if (!tomb || typeof tomb !== 'object' || typeof tomb.id !== 'number' || typeof tomb.deaths !== 'number' || typeof tomb.earnings !== 'number' || typeof tomb.can_claim !== 'boolean') throw new Error('Invalid tomb in tombs');
+            }
+        }
+
         function showScreen(screen) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById(screen + '-screen').classList.add('active');
@@ -273,12 +343,12 @@
         }
 
         async function apiCall(endpoint, data = {}) {
-            data.initData = initData;
             try {
                 const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-Init-Data': initData
                     },
                     body: JSON.stringify(data)
                 });
@@ -745,14 +815,53 @@
                 user = response.user;
                 document.getElementById('username').textContent = user.username;
                 document.getElementById('balance').textContent = user.balance.toFixed(2);
+                if (!user.is_setup_complete) {
+                    showOnboardingModal();
+                }
             } catch (e) {
                 showError('Ошибка входа: ' + e.message);
+            }
+        }
+
+        function showOnboardingModal() {
+            document.getElementById('onboarding-modal').classList.add('active');
+            document.getElementById('username-input').focus();
+        }
+
+        async function onboard() {
+            const username = document.getElementById('username-input').value.trim();
+            const errorEl = document.getElementById('onboard-error');
+            errorEl.textContent = '';
+
+            if (!username) {
+                errorEl.textContent = 'Username cannot be empty';
+                return;
+            }
+            if (username.length < 3 || username.length > 12) {
+                errorEl.textContent = 'Username must be 3-12 characters';
+                return;
+            }
+            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+                errorEl.textContent = 'Username can only contain letters, numbers, and underscores';
+                return;
+            }
+
+            try {
+                await apiCall('/api/onboard', { username });
+                user.username = username;
+                user.is_setup_complete = true;
+                document.getElementById('username').textContent = username;
+                closeModal();
+            } catch (e) {
+                errorEl.textContent = e.message;
             }
         }
 
         // Init
         if (tg) tg.ready();
         login(); // login on start
+
+        document.getElementById('onboard-btn').addEventListener('click', onboard);
     </script>
 </body>
 </html>
