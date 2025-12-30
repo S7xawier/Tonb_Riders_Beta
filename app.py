@@ -426,8 +426,9 @@ def raid_start():
         cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, -fee, 'raid_entry'))
         # Создать сессию
         expires_at = datetime.now() + timedelta(seconds=120)
-        cursor.execute('INSERT INTO raid_sessions (player_id, map_id, expires_at) VALUES (%s, %s, %s)', (user_id, map_id, expires_at.isoformat()))
-        session_id = cursor.lastrowid
+        cursor.execute('INSERT INTO raid_sessions (player_id, map_id, expires_at) VALUES (%s, %s, %s) RETURNING id', (user_id, map_id, expires_at.isoformat()))
+        new_session_row = cursor.fetchone()
+        session_id = new_session_row['id']
         dug_history = []
 
     # Получить grid из карты
