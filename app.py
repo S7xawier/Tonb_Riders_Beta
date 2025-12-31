@@ -356,7 +356,7 @@ def maps_create():
     conn.commit()
     conn.close()
 
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'rewards': rewards_json})
 
 @app.route('/api/raid/scout', methods=['POST'])
 def raid_scout():

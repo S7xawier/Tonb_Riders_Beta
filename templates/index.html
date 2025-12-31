@@ -107,6 +107,20 @@
         .cell[data-type="5"]::before {
             content: "⚱️";
         }
+        @keyframes bury-reward {
+            0% { opacity: 0; transform: scale(0.5) translate(-50%, -50%); color: gold; }
+            50% { opacity: 1; transform: scale(1.5) translate(-50%, -50%); color: gold; }
+            100% { opacity: 0; transform: scale(1) translate(-50%, -70px); color: gold; }
+        }
+        .reward-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            font-weight: bold;
+            font-size: 14px;
+            animation: bury-reward 1s ease-out forwards;
+            pointer-events: none;
+        }
         .toolbar {
             display: flex;
             justify-content: space-around;
@@ -265,6 +279,14 @@
             text-align: center;
             margin-bottom: 10px;
         }
+        .score-display {
+            font-size: 2rem;
+            text-align: center;
+            margin: 10px 0;
+            color: #2c1810;
+            font-weight: bold;
+            font-family: 'Cinzel', serif;
+        }
         .player-info {
             text-align: center;
             margin-bottom: 20px;
@@ -304,6 +326,7 @@
         <div class="player-info">
             <p>Игрок: <span id="username"></span></p>
             <p>Баланс: <span id="balance"></span> 💰</p>
+            <p>Счет: <span id="score"></span></p>
         </div>
     </div>
 
@@ -320,6 +343,7 @@
     </div>
 
     <div id="gameplay-screen" class="screen">
+        <div class="score-display">Очки: <span id="game-score-display">0</span></div>
         <div class="timer" id="timer">120</div>
         <div id="game-grid" class="grid"></div>
         <button onclick="leaveRaid()">Выйти</button>
@@ -391,6 +415,7 @@
         let scoutData = null;
         let skulls = [];
         let user = null;
+        let score = 0;
 
         function validateUser(user) {
             if (!user || typeof user !== 'object') throw new Error('Invalid user structure');
@@ -416,6 +441,12 @@
             for (let tomb of tombs) {
                 if (!tomb || typeof tomb !== 'object' || typeof tomb.id !== 'number' || typeof tomb.deaths !== 'number' || typeof tomb.earnings !== 'number' || typeof tomb.can_claim !== 'boolean') throw new Error('Invalid tomb in tombs');
             }
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('score').textContent = score;
+            const gameScoreEl = document.getElementById('game-score-display');
+            if (gameScoreEl) gameScoreEl.textContent = score;
         }
 
         function showScreen(screen) {
@@ -710,8 +741,35 @@
             document.getElementById('publish-btn').disabled = !(snakes === 4 && scarabs === 2 && chests === 1);
         }
 
+        function playRewardAnimation(cellIndex, amount) {
+            return new Promise(resolve => {
+                const cellEl = document.querySelector(`#editor-grid [data-index="${cellIndex}"]`);
+                if (!cellEl) { resolve(); return; }
+                const span = document.createElement('span');
+                span.className = 'reward-text';
+                span.textContent = `+${amount}`;
+                cellEl.appendChild(span);
+                span.addEventListener('animationend', () => {
+                    cellEl.removeChild(span);
+                    resolve();
+                });
+            });
+        }
+
         async function publishMap() {
-            await apiCall('/api/maps/create', { grid: editorGrid });
+            const result = await apiCall('/api/maps/create', { grid: editorGrid });
+            if (result.rewards && result.rewards.length > 0) {
+                // заблокировать интерфейс
+                document.getElementById('publish-btn').disabled = true;
+                document.querySelectorAll('.bottom-nav button').forEach(btn => btn.disabled = true);
+                // последовательная анимация
+                for (const reward of result.rewards) {
+                    await playRewardAnimation(reward.cell_index, reward.amount);
+                    await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 100));
+                }
+                // показать сообщение
+                alert('Карта опубликована! Награды получены.');
+            }
             showScreen('main');
         }
 
@@ -746,7 +804,6 @@
                 const cellEl = gridEl.children[s.cell_index];
                 if (cellEl) {
                     cellEl.innerHTML = '💀';
-                    cellEl.addEventListener('click', () => alert(`Игрок: ${s.username}\nПотеряно: ${s.amount}\nДата: ${s.date}`));
                 }
             });
             document.getElementById('scout-deaths').textContent = preview.stats.deaths;
@@ -761,6 +818,8 @@
 
         async function startRaidFromScout() {
             if (!scoutData) return;
+            score = 0;
+            updateScoreDisplay();
             const start = await apiCall('/api/raid/start', { map_id: scoutData.map_id });
             sessionId = start.session_id;
             gameGrid = start.safe_grid;
@@ -800,7 +859,6 @@
                 const cellEl = gridEl.children[s.cell_index];
                 if (cellEl) {
                     cellEl.innerHTML = '💀';
-                    cellEl.addEventListener('click', () => alert(`Игрок: ${s.username}\nПотеряно: ${s.amount}\nДата: ${s.date}`));
                 }
             });
         }
@@ -813,7 +871,8 @@
                 const result = await apiCall('/api/raid/dig', { session_id: sessionId, cell_index: index });
                 if (result.opened_cells) {
                     result.opened_cells.forEach(idx => gameGrid[idx] = 5);
-                    alert('+10 gold');
+                    score += 10;
+                    updateScoreDisplay();
                 } else {
                     gameGrid[index] = result.cell_type;
                 }
