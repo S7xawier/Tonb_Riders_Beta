@@ -101,6 +101,12 @@
         .cell[data-type="4"]::before {
             content: "⚰️";
         }
+        .cell[data-type="5"] {
+            background-color: gold;
+        }
+        .cell[data-type="5"]::before {
+            content: "⚱️";
+        }
         .toolbar {
             display: flex;
             justify-content: space-around;
@@ -383,6 +389,7 @@
         let isDeleteMode = false;
         let chestRotation = 'horizontal';
         let scoutData = null;
+        let skulls = [];
         let user = null;
 
         function validateUser(user) {
@@ -718,6 +725,7 @@
         async function renderScout() {
             if (!scoutData) return;
             const preview = await apiCall('/api/raid/preview', { map_id: scoutData.map_id });
+            skulls = scoutData.skulls_json || [];
             const gridEl = document.getElementById('scout-preview');
             gridEl.innerHTML = '';
             const grid = preview.safe_grid || preview.grid;
@@ -734,6 +742,13 @@
                 }
                 gridEl.appendChild(cellEl);
             });
+            skulls.forEach(s => {
+                const cellEl = gridEl.children[s.cell_index];
+                if (cellEl) {
+                    cellEl.innerHTML = '💀';
+                    cellEl.addEventListener('click', () => alert(`Игрок: ${s.username}\nПотеряно: ${s.amount}\nДата: ${s.date}`));
+                }
+            });
             document.getElementById('scout-deaths').textContent = preview.stats.deaths;
             document.getElementById('scout-wins').textContent = preview.stats.wins;
             document.getElementById('scout-fee').textContent = preview.fee;
@@ -749,6 +764,7 @@
             const start = await apiCall('/api/raid/start', { map_id: scoutData.map_id });
             sessionId = start.session_id;
             gameGrid = start.safe_grid;
+            skulls = start.skulls_json || [];
             showScreen('gameplay');
             if (start.expires_at) {
                 const remaining = Math.max(0, Math.floor((new Date(start.expires_at) - new Date()) / 1000));
@@ -780,6 +796,13 @@
                 }
                 gridEl.appendChild(cellEl);
             });
+            skulls.forEach(s => {
+                const cellEl = gridEl.children[s.cell_index];
+                if (cellEl) {
+                    cellEl.innerHTML = '💀';
+                    cellEl.addEventListener('click', () => alert(`Игрок: ${s.username}\nПотеряно: ${s.amount}\nДата: ${s.date}`));
+                }
+            });
         }
 
         async function dig(index) {
@@ -788,9 +811,14 @@
             cellEl.innerHTML = '<div>⏳</div>';
             try {
                 const result = await apiCall('/api/raid/dig', { session_id: sessionId, cell_index: index });
-                if (result.status === 'dead') {
+                if (result.opened_cells) {
+                    result.opened_cells.forEach(idx => gameGrid[idx] = 5);
+                    alert('+10 gold');
+                } else {
                     gameGrid[index] = result.cell_type;
-                    renderGameGrid();
+                }
+                renderGameGrid();
+                if (result.status === 'dead') {
                     setTimeout(() => {
                         showError('Вы погибли!');
                         showScreen('main');
@@ -798,12 +826,8 @@
                 } else if (result.status === 'hurt') {
                     showError('Ранен скарабеем!');
                     showScreen('main');
-                } else if (result.status === 'safe') {
-                    gameGrid[index] = result.cell_type;
-                    renderGameGrid();
-                    if (result.stage_complete) {
-                        document.getElementById('win-modal').classList.add('active');
-                    }
+                } else if (result.stage_complete) {
+                    document.getElementById('win-modal').classList.add('active');
                 }
             } catch (e) {
                 cellEl.innerHTML = '';

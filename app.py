@@ -327,6 +327,16 @@ def maps_create():
         if grid[i] in [2, 3, 4] and grid[i] == 1:
             return jsonify({'error': 'Objects cannot be placed on walls'}), 400
 
+    # Generate Hidden Reward Layer
+    import random
+    empty_cells = [i for i in range(48) if grid[i] == 0]
+    if len(empty_cells) < 12:
+        return jsonify({'error': 'Not enough empty cells for rewards'}), 400
+    rewards_list = [1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 8]
+    random.shuffle(rewards_list)
+    selected_indices = random.sample(empty_cells, 12)
+    rewards_json = {str(idx): amt for idx, amt in zip(selected_indices, rewards_list)}
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -341,7 +351,7 @@ def maps_create():
     cursor.execute('UPDATE users SET builder_credits = builder_credits - 1 WHERE id = %s', (user_id,))
 
     # Сохранить карту
-    cursor.execute('INSERT INTO maps (creator_id, grid_json) VALUES (%s, %s)', (user_id, json.dumps(grid)))
+    cursor.execute('INSERT INTO maps (creator_id, grid_json, rewards_json, skulls_json) VALUES (%s, %s, %s, %s)', (user_id, json.dumps(grid), json.dumps(rewards_json), json.dumps([])))
 
     conn.commit()
     conn.close()
@@ -358,20 +368,21 @@ def raid_scout():
     cursor = conn.cursor()
 
     # Найти случайную карту
-    cursor.execute('SELECT id, creator_id FROM maps WHERE active = TRUE AND creator_id != %s ORDER BY RANDOM() LIMIT 1', (user_id,))
+    cursor.execute('SELECT id, creator_id, skulls_json FROM maps WHERE active = TRUE AND creator_id != %s ORDER BY RANDOM() LIMIT 1', (user_id,))
     map_row = cursor.fetchone()
     if not map_row:
         conn.close()
         return jsonify({'error': 'No maps available'}), 404
 
     map_id = map_row['id']
+    skulls = safe_json_loads(map_row['skulls_json'], [])
     # Статистика: просто заглушка, в реальности считать из transactions или добавить поля
     stats = {'deaths': 0, 'wins': 0}
     fee = 0.0  # Пример, для теста
 
     conn.close()
 
-    return jsonify({'map_id': map_id, 'stats': stats, 'fee': fee})
+    return jsonify({'map_id': map_id, 'stats': stats, 'fee': fee, 'skulls_json': skulls})
 
 @limiter.limit("1 per minute")
 @app.route('/api/raid/start', methods=['POST'])
@@ -432,13 +443,14 @@ def raid_start():
         dug_history = []
 
     # Получить grid из карты
-    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s', (map_id,))
+    cursor.execute('SELECT grid_json, dug_json, skulls_json FROM maps WHERE id = %s', (map_id,))
     map_data = cursor.fetchone()
     if not map_data:
         conn.close()
         return jsonify({'error': 'Map not found'}), 404
     grid = safe_json_loads(map_data['grid_json'], None)
     dug = safe_json_loads(map_data['dug_json'], [])
+    skulls = safe_json_loads(map_data['skulls_json'], [])
     if grid is None:
         conn.close()
         return jsonify({'error': 'Map data corrupted'}), 500
@@ -448,15 +460,21 @@ def raid_start():
     for i in range(48):
         if i in dug:
             safe_grid.append(grid[i])
-        elif grid[i] == 1:
+        elif grid[i] == 1:  # wall
             safe_grid.append(1)
+        elif grid[i] == 4:  # chest
+            pair = find_chest_pair(grid, i)
+            if pair and pair in dug:
+                safe_grid.append(4)  # opened
+            else:
+                safe_grid.append(9)
         else:
             safe_grid.append(9)
 
     conn.commit()
     conn.close()
 
-    return jsonify({'session_id': session_id, 'safe_grid': safe_grid})
+    return jsonify({'session_id': session_id, 'safe_grid': safe_grid, 'skulls_json': skulls})
 
 @app.route('/api/raid/preview', methods=['POST'])
 def raid_preview():
@@ -507,6 +525,23 @@ def raid_preview():
 
     return jsonify({'safe_grid': safe_grid, 'stats': stats, 'fee': fee})
 
+def find_chest_pair(grid, index):
+    if grid[index] != 4:
+        return None
+    row = index // 8
+    col = index % 8
+    # horizontal
+    if col > 0 and grid[index - 1] == 4:
+        return index - 1
+    if col < 7 and grid[index + 1] == 4:
+        return index + 1
+    # vertical
+    if row > 0 and grid[index - 8] == 4:
+        return index - 8
+    if row < 5 and grid[index + 8] == 4:
+        return index + 8
+    return None
+
 @limiter.limit("20 per minute")
 @app.route('/api/raid/dig', methods=['POST'])
 def raid_dig():
@@ -547,22 +582,33 @@ def raid_dig():
         return jsonify({'error': 'Cell already dug'}), 400
 
     # Получить карту
-    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s', (map_id,))
+    cursor.execute('SELECT grid_json, dug_json, rewards_json, skulls_json FROM maps WHERE id = %s', (map_id,))
     map_data = cursor.fetchone()
     grid = safe_json_loads(map_data['grid_json'], None)
     if grid is None:
         conn.close()
         return jsonify({'error': 'Map data corrupted'}), 500
-    dug = safe_json_loads(map_data['dug_json'], None)
-    if dug is None:
-        conn.close()
-        return jsonify({'error': 'Map data corrupted'}), 500
+    dug = safe_json_loads(map_data['dug_json'], [])
+    rewards = safe_json_loads(map_data['rewards_json'], {})
+    skulls = safe_json_loads(map_data['skulls_json'], [])
 
     cell_type = grid[cell_index]
 
     if cell_type == 2:  # Змея
-        cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('dead', session_id))
-        dug.append(cell_index)  # Добавить череп
+        # Get username
+        cursor.execute('SELECT username FROM users WHERE id = %s', (user_id,))
+        username_row = cursor.fetchone()
+        username = username_row['username'] if username_row else 'unknown'
+        death_record = {
+            "cell_index": cell_index,
+            "username": username,
+            "amount": session['earnings_buffer'],
+            "date": datetime.utcnow().isoformat()
+        }
+        skulls.append(death_record)
+        cursor.execute('UPDATE maps SET skulls_json = %s, deaths_count = deaths_count + 1 WHERE id = %s', (json.dumps(skulls), map_id))
+        cursor.execute('UPDATE raid_sessions SET status = %s, earnings_buffer = 0 WHERE id = %s', ('dead', session_id))
+        dug.append(cell_index)
         cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
         conn.commit()
         conn.close()
@@ -575,20 +621,36 @@ def raid_dig():
         return jsonify({'status': 'hurt'})
 
     else:  # Сундук или пусто
-        reward = 0.05 if cell_type == 4 else 0.01  # Пример
+        reward = 0
+        opened_cells = [cell_index]
+        if cell_type == 0:  # Sand
+            reward = rewards.get(str(cell_index), 0)
+        elif cell_type == 4:  # Chest
+            pair = find_chest_pair(grid, cell_index)
+            if pair is not None:
+                opened_cells = sorted([cell_index, pair])
+                if pair not in dug_history:
+                    reward = 10
+                    dug_history.append(pair)
+                    dug.append(pair)
+                # else already opened, reward 0
+            else:
+                # invalid chest, but assume valid
+                pass
         earnings_buffer = session['earnings_buffer'] + reward
-        cursor.execute('UPDATE raid_sessions SET earnings_buffer = %s, dug_history = %s WHERE id = %s', (earnings_buffer, json.dumps(dug_history + [cell_index]), session_id))
+        dug_history.append(cell_index)
         dug.append(cell_index)
+        cursor.execute('UPDATE raid_sessions SET earnings_buffer = %s, dug_history = %s WHERE id = %s', (earnings_buffer, json.dumps(dug_history), session_id))
         cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
 
         # Проверка победы
         safe_cells = sum(1 for x in grid if x in [0, 4])
         opened = len(dug)
-        stage_complete = opened >= 12  # Пример
+        stage_complete = opened >= safe_cells
 
         conn.commit()
         conn.close()
-        return jsonify({'status': 'safe', 'cell_type': cell_type, 'reward': reward, 'stage_complete': stage_complete})
+        return jsonify({'status': 'safe', 'cell_type': cell_type, 'reward': reward, 'stage_complete': stage_complete, 'opened_cells': opened_cells})
 
 @app.route('/api/raid/leave', methods=['POST'])
 def raid_leave():
