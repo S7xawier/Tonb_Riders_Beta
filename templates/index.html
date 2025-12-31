@@ -112,6 +112,14 @@
             50% { opacity: 1; transform: scale(1.5) translate(-50%, -50%); color: gold; }
             100% { opacity: 0; transform: scale(1) translate(-50%, -70px); color: gold; }
         }
+        @keyframes shine {
+            0% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(255, 215, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
+        }
+        .cell.shine {
+            animation: shine 1s ease-out;
+        }
         .reward-text {
             position: absolute;
             top: 50%;
@@ -745,26 +753,31 @@
             return new Promise(resolve => {
                 const cellEl = document.querySelector(`#editor-grid [data-index="${cellIndex}"]`);
                 if (!cellEl) { resolve(); return; }
-                const span = document.createElement('span');
-                span.className = 'reward-text';
-                span.textContent = `+${amount}`;
-                cellEl.appendChild(span);
-                span.addEventListener('animationend', () => {
-                    cellEl.removeChild(span);
-                    resolve();
-                });
+                cellEl.classList.add('shine');
+                const delay = Math.random() * 200 + 100; // задержка между анимациями клеток
+                setTimeout(() => {
+                    const span = document.createElement('span');
+                    span.className = 'reward-text';
+                    span.textContent = `+${amount}`;
+                    cellEl.appendChild(span);
+                    span.addEventListener('animationend', () => {
+                        cellEl.removeChild(span);
+                        cellEl.classList.remove('shine');
+                        resolve();
+                    });
+                }, delay);
             });
         }
 
         async function publishMap() {
             const result = await apiCall('/api/maps/create', { grid: editorGrid });
-            if (result.rewards && result.rewards.length > 0) {
+            if (result.rewards && Object.keys(result.rewards).length > 0) {
                 // заблокировать интерфейс
                 document.getElementById('publish-btn').disabled = true;
                 document.querySelectorAll('.bottom-nav button').forEach(btn => btn.disabled = true);
                 // последовательная анимация
-                for (const reward of result.rewards) {
-                    await playRewardAnimation(reward.cell_index, reward.amount);
+                for (const [cell_index, amount] of Object.entries(result.rewards)) {
+                    await playRewardAnimation(cell_index, amount);
                     await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 100));
                 }
                 // показать сообщение
@@ -1035,5 +1048,6 @@
         <button onclick="showScreen('tombs')">Мои гробницы</button>
         <button onclick="showScreen('profile')">Профиль</button>
     </nav>
+    <div id="interface-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 9999;"></div>
 </body>
 </html>
