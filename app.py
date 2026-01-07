@@ -652,7 +652,7 @@ def raid_dig():
             death_record = {
                 "cell_index": cell_index,
                 "username": username,
-                "amount": session['earnings_buffer'],
+                "amount": float(session['earnings_buffer']),
                 "date": datetime.utcnow().isoformat()
             }
             skulls.append(death_record)
@@ -661,7 +661,7 @@ def raid_dig():
             dug.append(cell_index)
             cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
             conn.commit()
-            return jsonify({'status': 'dead', 'cell_type': 2, 'reward': 0})
+            return jsonify({'status': 'dead', 'cell_type': 5, 'reward': 0, 'death_info': death_record})
 
         elif cell_type == 3:  # Дыра
             cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('hurt', session_id))
@@ -678,7 +678,8 @@ def raid_dig():
                 if pair is not None:
                     opened_cells = sorted([cell_index, pair])
                     if pair not in dug_history:
-                        reward = 10
+                        # Используем награду из rewards_json для первой клетки сундука
+                        reward = rewards.get(str(cell_index), 10)
                         dug_history.append(pair)
                         dug.append(pair)
                     # else already opened, reward 0
@@ -691,10 +692,16 @@ def raid_dig():
             cursor.execute('UPDATE raid_sessions SET earnings_buffer = %s, dug_history = %s WHERE id = %s', (earnings_buffer, json.dumps(dug_history), session_id))
             cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
 
-            # Проверка победы
+            # Проверка победы - завершаем при 22 выкопанных клетках
             safe_cells = sum(1 for x in grid if x in [0, 4])
             opened = len(dug)
-            stage_complete = opened >= safe_cells
+            stage_complete = opened >= 22
+
+            # Автоматическое завершение при достижении 22 клеток
+            if stage_complete:
+                cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('completed', session_id))
+                conn.commit()
+                return jsonify({'status': 'completed', 'cell_type': cell_type, 'reward': reward, 'stage_complete': True, 'opened_cells': opened_cells, 'earnings': earnings_buffer})
 
             conn.commit()
             return jsonify({'status': 'safe', 'cell_type': cell_type, 'reward': reward, 'stage_complete': stage_complete, 'opened_cells': opened_cells})

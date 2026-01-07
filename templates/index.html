@@ -139,10 +139,17 @@
             content: "⚰️";
         }
         .cell[data-type="5"] {
-            background-color: gold;
+            background-color: #8b0000;
         }
         .cell[data-type="5"]::before {
-            content: "⚱️";
+            content: "💀";
+        }
+        .cell[data-type="5"].skull-clickable {
+            cursor: pointer;
+        }
+        .cell[data-type="5"].skull-clickable:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 10px rgba(139, 0, 0, 0.5);
         }
         @keyframes bury-reward {
             0% { opacity: 0; transform: scale(0.5) translate(-50%, -50%); color: gold; }
@@ -537,6 +544,23 @@
             font-size: 24px;
         }
 
+        /* Подсказка по навигации */
+        .navigation-hint {
+            margin: 15px 0;
+            padding: 12px 15px;
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(139, 195, 74, 0.1));
+            border: 1px solid #81c784;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .navigation-hint p {
+            margin: 0;
+            font-size: 13px;
+            color: #2e7d32;
+            line-height: 1.4;
+        }
+
         /* Адаптивность для мобильных устройств */
         @media (max-width: 600px) {
             .main-header {
@@ -570,6 +594,15 @@
                 font-size: 18px;
             }
 
+            .navigation-hint {
+                margin: 10px 0;
+                padding: 10px 12px;
+            }
+
+            .navigation-hint p {
+                font-size: 11px;
+            }
+
             .grid {
                 max-width: 100%;
             }
@@ -586,7 +619,7 @@
     <div id="main-screen" class="screen active">
         <!-- Header с иконкой профиля -->
         <header class="main-header">
-            <div class="logo-small">Pharaoh Online</div>
+            <div class="logo-small">🏠 Лобби</div>
             <div class="profile-icon" onclick="showScreen('profile')">
                 <div class="avatar">👤</div>
                 <div class="username-display" id="username-header"></div>
@@ -607,7 +640,12 @@
                 <span class="btn-text">Начать рейд</span>
             </button>
         </div>
-        
+
+        <!-- Подсказка по навигации -->
+        <div class="navigation-hint">
+            <p>💡 <strong>Совет:</strong> Используйте нижнюю навигацию для доступа к разведке карт и другим разделам</p>
+        </div>
+
         <!-- Информация о балансе -->
         <div class="balance-display">
             <div class="balance-item">
@@ -647,16 +685,16 @@
     </div>
 
     <div id="scout-screen" class="screen">
-        <h2>Разведка</h2>
+        <h2>🔍 Разведка карт</h2>
         <div id="scout-preview" class="grid"></div>
         <div class="stats">
             <p>Смертей: <span id="scout-deaths">0</span></p>
             <p>Побед: <span id="scout-wins">0</span></p>
             <p>Стоимость входа: <span id="scout-fee">0.0</span></p>
         </div>
-        <button onclick="scoutAnother()">Искать другую карту</button>
-        <button onclick="startRaidFromScout()">Грабить эту карту</button>
-        <button onclick="showScreen('main')">Назад</button>
+        <button onclick="scoutAnother()">🔄 Искать другую карту</button>
+        <button onclick="startRaidFromScout()">⚔️ Грабить эту карту</button>
+        <button onclick="showScreen('main')">🏠 Вернуться в лобби</button>
     </div>
 
     <div id="win-modal" class="modal">
@@ -681,6 +719,16 @@
             <input type="text" id="username-input" placeholder="Имя">
             <button id="onboard-btn">Вписать имя в историю</button>
             <p id="onboard-error" class="error"></p>
+        </div>
+    </div>
+
+    <div id="skull-modal" class="modal">
+        <div class="modal-content">
+            <h3>💀 Черепок</h3>
+            <p><strong>Игрок:</strong> <span id="skull-username"></span></p>
+            <p><strong>Дата смерти:</strong> <span id="skull-date"></span></p>
+            <p><strong>Потеряно:</strong> <span id="skull-amount"></span> 💰</p>
+            <button onclick="closeSkullModal()">Закрыть</button>
         </div>
     </div>
 
@@ -747,6 +795,8 @@
                 loadTombs();
             } else if (screen === 'profile') {
                 loadProfile();
+            } else if (screen === 'scout') {
+                loadScoutScreen();
             }
         }
 
@@ -776,6 +826,17 @@
 
         function closeModal() {
             document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+        }
+
+        function closeSkullModal() {
+            document.getElementById('skull-modal').classList.remove('active');
+        }
+
+        function showSkullModal(skull) {
+            document.getElementById('skull-username').textContent = skull.username;
+            document.getElementById('skull-date').textContent = new Date(skull.date).toLocaleString('ru-RU');
+            document.getElementById('skull-amount').textContent = skull.amount.toFixed(2);
+            document.getElementById('skull-modal').classList.add('active');
         }
 
         // Editor functions
@@ -1103,6 +1164,11 @@
             document.getElementById('scout-fee').textContent = preview.fee;
         }
 
+        async function loadScoutScreen() {
+            scoutData = await apiCall('/api/raid/scout');
+            await renderScout();
+        }
+
         async function scoutAnother() {
             scoutData = await apiCall('/api/raid/scout');
             await renderScout();
@@ -1151,6 +1217,11 @@
                 const cellEl = gridEl.children[s.cell_index];
                 if (cellEl) {
                     cellEl.innerHTML = '💀';
+                    cellEl.classList.add('skull-clickable');
+                    cellEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        showSkullModal(s);
+                    });
                 }
             });
         }
@@ -1163,10 +1234,14 @@
                 const result = await apiCall('/api/raid/dig', { session_id: sessionId, cell_index: index });
                 if (result.opened_cells) {
                     result.opened_cells.forEach(idx => gameGrid[idx] = 5);
-                    score += 10;
+                    score += result.reward;
                     updateScoreDisplay();
                 } else {
                     gameGrid[index] = result.cell_type;
+                    // Если это черепок (type 5), добавляем в skulls
+                    if (result.cell_type === 5 && result.death_info) {
+                        skulls.push(result.death_info);
+                    }
                 }
                 renderGameGrid();
                 if (result.status === 'dead') {
@@ -1177,6 +1252,12 @@
                 } else if (result.status === 'hurt') {
                     showError('Ранен скарабеем!');
                     showScreen('main');
+                } else if (result.status === 'completed') {
+                    // Автоматическое завершение рейда
+                    clearInterval(timerInterval);
+                    await apiCall('/api/raid/leave', { session_id: sessionId });
+                    document.getElementById('balance').textContent = (parseFloat(document.getElementById('balance').textContent) + result.earnings).toFixed(2);
+                    showScreen('main');
                 } else if (result.stage_complete) {
                     document.getElementById('win-modal').classList.add('active');
                 }
@@ -1186,6 +1267,10 @@
         }
 
         function startTimer(initialTime = 120) {
+            // Очистить старый таймер перед запуском нового
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
             let time = initialTime;
             timerInterval = setInterval(() => {
                 time--;
@@ -1199,7 +1284,10 @@
 
         async function leaveRaid() {
             if (timerInterval) clearInterval(timerInterval);
-            await apiCall('/api/raid/leave', { session_id: sessionId });
+            const result = await apiCall('/api/raid/leave', { session_id: sessionId });
+            // Обновить баланс на UI
+            const currentBalance = parseFloat(document.getElementById('balance').textContent);
+            document.getElementById('balance').textContent = (currentBalance + result.earnings).toFixed(2);
             showScreen('main');
         }
 
@@ -1332,13 +1420,13 @@
         document.getElementById('onboard-btn').addEventListener('click', onboard);
     </script>
     <nav class="bottom-nav">
-        <button class="nav-btn" onclick="showScreen('editor')">
-            <span class="nav-icon">🗺️</span>
-            <span class="nav-text">Карты</span>
+        <button class="nav-btn" onclick="showScreen('main')">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-text">Лобби</span>
         </button>
-        <button class="nav-btn" onclick="startRaid()">
-            <span class="nav-icon">⚔️</span>
-            <span class="nav-text">Рейд</span>
+        <button class="nav-btn" onclick="showScreen('scout')">
+            <span class="nav-icon">🔍</span>
+            <span class="nav-text">Разведка</span>
         </button>
         <button class="nav-btn" onclick="showScreen('tombs')">
             <span class="nav-icon">⚰️</span>
