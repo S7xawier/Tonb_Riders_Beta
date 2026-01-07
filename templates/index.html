@@ -151,6 +151,12 @@
             transform: scale(1.1);
             box-shadow: 0 0 10px rgba(139, 0, 0, 0.5);
         }
+        .cell[data-type="6"] {
+            background-color: #ffd700;
+        }
+        .cell[data-type="6"]::before {
+            content: "⚱️";
+        }
         @keyframes bury-reward {
             0% { opacity: 0; transform: scale(0.5) translate(-50%, -50%); color: gold; }
             50% { opacity: 1; transform: scale(1.5) translate(-50%, -50%); color: gold; }
@@ -811,7 +817,12 @@
                     body: JSON.stringify(data)
                 });
                 const result = await response.json();
-                if (!response.ok) throw new Error(result.error || 'API error');
+                if (!response.ok) {
+                    if (response.status === 429) {
+                        throw new Error('Слишком много запросов. Подождите немного и попробуйте снова.');
+                    }
+                    throw new Error(result.error || 'API error');
+                }
                 return result;
             } catch (e) {
                 showError(e.message);
@@ -1213,27 +1224,39 @@
                 }
                 gridEl.appendChild(cellEl);
             });
+            // Отображаем черепки
             skulls.forEach(s => {
                 const cellEl = gridEl.children[s.cell_index];
                 if (cellEl) {
                     cellEl.innerHTML = '💀';
                     cellEl.classList.add('skull-clickable');
-                    cellEl.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        showSkullModal(s);
-                    });
+                    cellEl.dataset.skullIndex = skulls.indexOf(s);
                 }
             });
+            // Делегирование событий для кликов на черепки
+            gridEl.onclick = (e) => {
+                const skullEl = e.target.closest('.skull-clickable');
+                if (skullEl) {
+                    const skullIndex = parseInt(skullEl.dataset.skullIndex);
+                    if (!isNaN(skullIndex) && skulls[skullIndex]) {
+                        e.stopPropagation();
+                        showSkullModal(skulls[skullIndex]);
+                    }
+                }
+            };
         }
 
         async function dig(index) {
+            // Проверяем, не копается ли уже эта клетка
+            if (gameGrid[index] !== 9) return;
+            
             // loading
             const cellEl = document.querySelector(`#game-grid .cell:nth-child(${index + 1})`);
             cellEl.innerHTML = '<div>⏳</div>';
             try {
                 const result = await apiCall('/api/raid/dig', { session_id: sessionId, cell_index: index });
                 if (result.opened_cells) {
-                    result.opened_cells.forEach(idx => gameGrid[idx] = 5);
+                    result.opened_cells.forEach(idx => gameGrid[idx] = 6); // 6 - открытый сундук
                     score += result.reward;
                     updateScoreDisplay();
                 } else {
@@ -1262,7 +1285,12 @@
                     document.getElementById('win-modal').classList.add('active');
                 }
             } catch (e) {
+                // При ошибке просто убираем loading, клетка остается кликабельной
                 cellEl.innerHTML = '';
+                // Если это ошибка 429, показываем предупреждение
+                if (e.message && e.message.includes('Слишком много запросов')) {
+                    // Клетка остается кликабельной для повторной попытки
+                }
             }
         }
 

@@ -595,7 +595,7 @@ def find_chest_pair(grid, index):
         return index + 8
     return None
 
-@limiter.limit("20 per minute")
+@limiter.limit("60 per minute")
 @app.route('/api/raid/dig', methods=['POST'])
 def raid_dig():
     user_id = require_auth()
