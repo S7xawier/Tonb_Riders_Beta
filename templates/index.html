@@ -37,14 +37,51 @@
             bottom: 0;
             left: 0;
             width: 100%;
-            background-color: #2c1810;
+            background: linear-gradient(180deg, #3d2817 0%, #2c1810 100%);
             display: flex;
             justify-content: space-around;
-            padding: 10px 0;
+            padding: 8px 0;
             z-index: 1000;
+            border-top: 2px solid #5d4e37;
+            box-shadow: 0 -4px 15px rgba(0,0,0,0.3);
         }
-        .bottom-nav button {
+
+        .nav-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 12px;
             margin: 0;
+            background: transparent;
+            border: none;
+            color: #a1887f;
+            font-size: 11px;
+            font-weight: normal;
+            text-transform: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: none;
+            border-radius: 10px;
+            min-width: 60px;
+        }
+
+        .nav-btn:hover {
+            background: rgba(218, 165, 32, 0.2);
+            color: #daa520;
+            transform: translateY(-2px);
+        }
+
+        .nav-btn:active {
+            transform: translateY(0);
+        }
+
+        .nav-icon {
+            font-size: 22px;
+        }
+
+        .nav-text {
+            font-size: 11px;
         }
         .grid {
             display: grid;
@@ -287,22 +324,6 @@
             text-align: center;
             margin-bottom: 10px;
         }
-        .score-display {
-            font-size: 2rem;
-            text-align: center;
-            margin: 10px 0;
-            color: #2c1810;
-            font-weight: bold;
-            font-family: 'Cinzel', serif;
-        }
-        .player-info {
-            text-align: center;
-            margin-bottom: 20px;
-            font-size: 18px;
-        }
-        .player-info p {
-            margin: 5px 0;
-        }
         .stats {
             margin-bottom: 10px;
         }
@@ -316,10 +337,243 @@
             padding: 8px;
             text-align: left;
         }
+    </style>
+    <style>
+        /* Header с иконкой профиля */
+        .main-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: linear-gradient(135deg, #2c1810 0%, #5d4e37 100%);
+            border-radius: 0 0 15px 15px;
+            margin: -10px -10px 20px -10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .logo-small {
+            font-family: 'Cinzel', serif;
+            font-size: 18px;
+            color: #daa520;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        /* Иконка профиля */
+        .profile-icon {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 8px 12px;
+            background: rgba(218, 165, 32, 0.2);
+            border: 1px solid #daa520;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+        }
+
+        .profile-icon:hover {
+            background: rgba(218, 165, 32, 0.3);
+            transform: scale(1.05);
+            box-shadow: 0 2px 8px rgba(218, 165, 32, 0.4);
+        }
+
+        .avatar {
+            font-size: 24px;
+        }
+
+        .username-display {
+            font-size: 14px;
+            color: #f4e4bc;
+            font-weight: bold;
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Бейдж с непрочитанными сообщениями */
+        .badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: linear-gradient(135deg, #f44336, #d32f2f);
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            min-width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            animation: pulse-badge 2s infinite;
+        }
+
+        @keyframes pulse-badge {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        /* Контейнер основных действий */
+        .primary-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 20px 0;
+            padding: 0 10px;
+        }
+
+        /* Основные кнопки */
+        .primary-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 18px 25px;
+            border: none;
+            border-radius: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .primary-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .primary-btn:hover::before {
+            left: 100%;
+        }
+
+        .primary-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        }
+
+        .primary-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        /* Кнопка редактора карт */
+        .editor-btn {
+            background: linear-gradient(135deg, #4caf50, #388e3c);
+            color: white;
+            border: 2px solid #2e7d32;
+        }
+
+        .editor-btn:hover {
+            background: linear-gradient(135deg, #66bb6a, #4caf50);
+        }
+
+        /* Кнопка рейда */
+        .raid-btn {
+            background: linear-gradient(135deg, #f44336, #d32f2f);
+            color: white;
+            border: 2px solid #c62828;
+        }
+
+        .raid-btn:hover {
+            background: linear-gradient(135deg, #ef5350, #f44336);
+        }
+
+        /* Иконки в кнопках */
+        .btn-icon {
+            font-size: 24px;
+        }
+
+        .btn-text {
+            font-size: 16px;
+        }
+
+        /* Отображение баланса */
+        .balance-display {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: linear-gradient(135deg, rgba(218, 165, 32, 0.1), rgba(184, 134, 11, 0.1));
+            border: 2px solid #daa520;
+            border-radius: 15px;
+            box-shadow: inset 0 2px 5px rgba(218, 165, 32, 0.2);
+        }
+
+        .balance-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .balance-label {
+            font-size: 16px;
+            color: #5d4e37;
+            font-weight: bold;
+        }
+
+        .balance-value {
+            font-size: 22px;
+            color: #2c1810;
+            font-weight: bold;
+            font-family: 'Cinzel', serif;
+        }
+
+        .balance-icon {
+            font-size: 24px;
+        }
+
+        /* Адаптивность для мобильных устройств */
         @media (max-width: 600px) {
+            .main-header {
+                padding: 12px 15px;
+                margin: -10px -10px 15px -10px;
+            }
+
+            .logo-small {
+                font-size: 16px;
+            }
+
+            .username-display {
+                font-size: 12px;
+                max-width: 80px;
+            }
+
+            .primary-btn {
+                padding: 15px 20px;
+                font-size: 16px;
+            }
+
+            .btn-icon {
+                font-size: 22px;
+            }
+
+            .btn-text {
+                font-size: 14px;
+            }
+
+            .balance-value {
+                font-size: 18px;
+            }
+
             .grid {
                 max-width: 100%;
             }
+
             .cell {
                 width: 30px;
                 height: 30px;
@@ -330,11 +584,37 @@
 </head>
 <body>
     <div id="main-screen" class="screen active">
-        <h1>Pharaoh Online</h1>
-        <div class="player-info">
-            <p>Игрок: <span id="username"></span></p>
-            <p>Баланс: <span id="balance"></span> 💰</p>
-            <p>Счет: <span id="score"></span></p>
+        <!-- Header с иконкой профиля -->
+        <header class="main-header">
+            <div class="logo-small">Pharaoh Online</div>
+            <div class="profile-icon" onclick="showScreen('profile')">
+                <div class="avatar">👤</div>
+                <div class="username-display" id="username-header"></div>
+                <div class="badge" id="unread-badge" style="display: none;">
+                    <span id="unread-count">0</span>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Основные игровые кнопки -->
+        <div class="primary-actions">
+            <button class="primary-btn editor-btn" onclick="showScreen('editor')">
+                <span class="btn-icon">🗺️</span>
+                <span class="btn-text">Редактор карт</span>
+            </button>
+            <button class="primary-btn raid-btn" onclick="startRaid()">
+                <span class="btn-icon">⚔️</span>
+                <span class="btn-text">Начать рейд</span>
+            </button>
+        </div>
+        
+        <!-- Информация о балансе -->
+        <div class="balance-display">
+            <div class="balance-item">
+                <span class="balance-label">Баланс:</span>
+                <span class="balance-value" id="balance"></span>
+                <span class="balance-icon">💰</span>
+            </div>
         </div>
     </div>
 
@@ -452,7 +732,6 @@
         }
 
         function updateScoreDisplay() {
-            document.getElementById('score').textContent = score;
             const gameScoreEl = document.getElementById('game-score-display');
             if (gameScoreEl) gameScoreEl.textContent = score;
         }
@@ -774,7 +1053,7 @@
             if (result.rewards && Object.keys(result.rewards).length > 0) {
                 // заблокировать интерфейс
                 document.getElementById('publish-btn').disabled = true;
-                document.querySelectorAll('.bottom-nav button').forEach(btn => btn.disabled = true);
+                document.querySelectorAll('.nav-btn').forEach(btn => btn.disabled = true);
                 // последовательная анимация
                 for (const [cell_index, amount] of Object.entries(result.rewards)) {
                     await playRewardAnimation(cell_index, amount);
@@ -992,8 +1271,18 @@
             try {
                 const response = await apiCall('/api/login');
                 user = response.user;
-                document.getElementById('username').textContent = user.username;
+                // Обновляем отображение имени в хедере
+                document.getElementById('username-header').textContent = user.username;
                 document.getElementById('balance').textContent = user.balance.toFixed(2);
+                
+                // Обновляем бейдж непрочитанных сообщений (если есть данные)
+                if (user.unread_messages && user.unread_messages > 0) {
+                    const badge = document.getElementById('unread-badge');
+                    const count = document.getElementById('unread-count');
+                    badge.style.display = 'flex';
+                    count.textContent = user.unread_messages;
+                }
+                
                 if (!user.is_setup_complete) {
                     showOnboardingModal();
                 }
@@ -1029,7 +1318,7 @@
                 await apiCall('/api/onboard', { username });
                 user.username = username;
                 user.is_setup_complete = true;
-                document.getElementById('username').textContent = username;
+                document.getElementById('username-header').textContent = username;
                 closeModal();
             } catch (e) {
                 errorEl.textContent = e.message;
@@ -1043,10 +1332,22 @@
         document.getElementById('onboard-btn').addEventListener('click', onboard);
     </script>
     <nav class="bottom-nav">
-        <button onclick="showScreen('editor')">Редактор карт</button>
-        <button onclick="startRaid()">Начать рейд</button>
-        <button onclick="showScreen('tombs')">Мои гробницы</button>
-        <button onclick="showScreen('profile')">Профиль</button>
+        <button class="nav-btn" onclick="showScreen('editor')">
+            <span class="nav-icon">🗺️</span>
+            <span class="nav-text">Карты</span>
+        </button>
+        <button class="nav-btn" onclick="startRaid()">
+            <span class="nav-icon">⚔️</span>
+            <span class="nav-text">Рейд</span>
+        </button>
+        <button class="nav-btn" onclick="showScreen('tombs')">
+            <span class="nav-icon">⚰️</span>
+            <span class="nav-text">Гробницы</span>
+        </button>
+        <button class="nav-btn" onclick="showScreen('profile')">
+            <span class="nav-icon">👤</span>
+            <span class="nav-text">Профиль</span>
+        </button>
     </nav>
     <div id="interface-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 9999;"></div>
 </body>

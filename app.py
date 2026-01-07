@@ -379,8 +379,9 @@ def maps_create():
     cursor = conn.cursor()
 
     try:
+        cursor.execute('SET statement_timeout = 5000')  # 5 секунд
         # Проверить кредиты
-        cursor.execute('SELECT builder_credits FROM users WHERE id = %s', (user_id,))
+        cursor.execute('SELECT builder_credits FROM users WHERE id = %s FOR UPDATE', (user_id,))
         credits_row = cursor.fetchone()
         if not credits_row or credits_row['builder_credits'] <= 0:
             return jsonify({'error': 'No credits'}), 400
@@ -393,6 +394,10 @@ def maps_create():
 
         conn.commit()
         return jsonify({'success': True, 'rewards': rewards_json})
+    except psycopg2.extensions.TransactionRollbackError as e:
+        conn.rollback()
+        logging.error(f"Deadlock detected: {e}")
+        return jsonify({'error': 'Please retry'}), 409
     except Exception as e:
         conn.rollback()
         logging.error(f"Error in maps_create: {e}")
@@ -442,8 +447,9 @@ def raid_start():
     cursor = conn.cursor()
 
     try:
+        cursor.execute('SET statement_timeout = 5000')  # 5 секунд
         # Проверить баланс
-        cursor.execute('SELECT balance FROM users WHERE id = %s', (user_id,))
+        cursor.execute('SELECT balance FROM users WHERE id = %s FOR UPDATE', (user_id,))
         balance_row = cursor.fetchone()
         balance = balance_row['balance'] if balance_row else 0.0
         fee = 0.0  # Пример, для теста
@@ -512,6 +518,10 @@ def raid_start():
 
         conn.commit()
         return jsonify({'session_id': session_id, 'safe_grid': safe_grid, 'skulls_json': skulls})
+    except psycopg2.extensions.TransactionRollbackError as e:
+        conn.rollback()
+        logging.error(f"Deadlock detected: {e}")
+        return jsonify({'error': 'Please retry'}), 409
     except Exception as e:
         conn.rollback()
         logging.error(f"Error in raid_start: {e}")
@@ -708,7 +718,8 @@ def raid_leave():
     cursor = conn.cursor()
 
     try:
-        cursor.execute('SELECT earnings_buffer FROM raid_sessions WHERE id = %s AND player_id = %s', (session_id, user_id))
+        cursor.execute('SET statement_timeout = 5000')  # 5 секунд
+        cursor.execute('SELECT earnings_buffer FROM raid_sessions WHERE id = %s AND player_id = %s FOR UPDATE', (session_id, user_id))
         session = cursor.fetchone()
         if not session:
             return jsonify({'error': 'Session not found'}), 404
@@ -720,6 +731,10 @@ def raid_leave():
 
         conn.commit()
         return jsonify({'success': True, 'earnings': earnings})
+    except psycopg2.extensions.TransactionRollbackError as e:
+        conn.rollback()
+        logging.error(f"Deadlock detected: {e}")
+        return jsonify({'error': 'Please retry'}), 409
     except Exception as e:
         conn.rollback()
         logging.error(f"Error in raid_leave: {e}")
@@ -768,7 +783,8 @@ def my_tombs_claim():
     cursor = conn.cursor()
 
     try:
-        cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s AND creator_id = %s', (map_id, user_id))
+        cursor.execute('SET statement_timeout = 5000')  # 5 секунд
+        cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s AND creator_id = %s FOR UPDATE', (map_id, user_id))
         map_data = cursor.fetchone()
         if not map_data:
             return jsonify({'error': 'Map not found'}), 404
@@ -789,6 +805,10 @@ def my_tombs_claim():
 
         conn.commit()
         return jsonify({'success': True, 'reward': reward})
+    except psycopg2.extensions.TransactionRollbackError as e:
+        conn.rollback()
+        logging.error(f"Deadlock detected: {e}")
+        return jsonify({'error': 'Please retry'}), 409
     except Exception as e:
         conn.rollback()
         logging.error(f"Error in my_tombs_claim: {e}")
