@@ -221,6 +221,44 @@ def require_auth():
         return None
     return user_id
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """
+    Health check endpoint for Railway monitoring.
+    Returns 200 if all systems are operational, 503 otherwise.
+    """
+    health_status = {
+        'status': 'healthy',
+        'database': 'connected',
+        'bot_token': 'configured',
+        'timestamp': datetime.utcnow().isoformat()
+    }
+    
+    try:
+        # Check database connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT 1')
+        cursor.close()
+        conn.close()
+        
+        # Check BOT_TOKEN
+        if not BOT_TOKEN:
+            health_status['bot_token'] = 'missing'
+            health_status['status'] = 'unhealthy'
+            logging.warning("Health check: BOT_TOKEN not configured")
+            return jsonify(health_status), 503
+        
+        logging.info("Health check passed")
+        return jsonify(health_status), 200
+        
+    except Exception as e:
+        health_status['status'] = 'unhealthy'
+        health_status['database'] = 'disconnected'
+        health_status['error'] = str(e)
+        logging.error(f"Health check failed: {e}")
+        return jsonify(health_status), 503
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -340,23 +378,27 @@ def maps_create():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Проверить кредиты
-    cursor.execute('SELECT builder_credits FROM users WHERE id = %s', (user_id,))
-    credits_row = cursor.fetchone()
-    if not credits_row or credits_row['builder_credits'] <= 0:
+    try:
+        # Проверить кредиты
+        cursor.execute('SELECT builder_credits FROM users WHERE id = %s', (user_id,))
+        credits_row = cursor.fetchone()
+        if not credits_row or credits_row['builder_credits'] <= 0:
+            return jsonify({'error': 'No credits'}), 400
+
+        # Списать кредит
+        cursor.execute('UPDATE users SET builder_credits = builder_credits - 1 WHERE id = %s', (user_id,))
+
+        # Сохранить карту
+        cursor.execute('INSERT INTO maps (creator_id, grid_json, rewards_json, skulls_json) VALUES (%s, %s, %s, %s)', (user_id, json.dumps(grid), json.dumps(rewards_json), json.dumps([])))
+
+        conn.commit()
+        return jsonify({'success': True, 'rewards': rewards_json})
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error in maps_create: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
         conn.close()
-        return jsonify({'error': 'No credits'}), 400
-
-    # Списать кредит
-    cursor.execute('UPDATE users SET builder_credits = builder_credits - 1 WHERE id = %s', (user_id,))
-
-    # Сохранить карту
-    cursor.execute('INSERT INTO maps (creator_id, grid_json, rewards_json, skulls_json) VALUES (%s, %s, %s, %s)', (user_id, json.dumps(grid), json.dumps(rewards_json), json.dumps([])))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True, 'rewards': rewards_json})
 
 @app.route('/api/raid/scout', methods=['POST'])
 def raid_scout():
@@ -399,82 +441,83 @@ def raid_start():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Проверить баланс
-    cursor.execute('SELECT balance FROM users WHERE id = %s', (user_id,))
-    balance_row = cursor.fetchone()
-    balance = balance_row['balance'] if balance_row else 0.0
-    fee = 0.0  # Пример, для теста
+    try:
+        # Проверить баланс
+        cursor.execute('SELECT balance FROM users WHERE id = %s', (user_id,))
+        balance_row = cursor.fetchone()
+        balance = balance_row['balance'] if balance_row else 0.0
+        fee = 0.0  # Пример, для теста
 
-    # Проверить существование карты
-    cursor.execute('SELECT id FROM maps WHERE id = %s', (map_id,))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Map not found'}), 404
+        # Проверить существование карты
+        cursor.execute('SELECT id FROM maps WHERE id = %s', (map_id,))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Map not found'}), 404
 
-    # Проверить активную сессию
-    cursor.execute('SELECT * FROM raid_sessions WHERE player_id = %s AND status = %s', (user_id, 'active'))
-    session = cursor.fetchone()
-    create_new = True
-    if session:
-        expires_at = session['expires_at']
-        if isinstance(expires_at, str):
-            expires_at = datetime.fromisoformat(expires_at)
-        if datetime.now() > expires_at:
-            cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session['id']))
-        else:
-            # resume
-            session_id = session['id']
-            map_id = session['map_id']
-            dug_history = safe_json_loads(session['dug_history'], [])
-            create_new = False
+        # Проверить активную сессию
+        cursor.execute('SELECT * FROM raid_sessions WHERE player_id = %s AND status = %s', (user_id, 'active'))
+        session = cursor.fetchone()
+        create_new = True
+        if session:
+            expires_at = session['expires_at']
+            if isinstance(expires_at, str):
+                expires_at = datetime.fromisoformat(expires_at)
+            if datetime.now() > expires_at:
+                cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session['id']))
+            else:
+                # resume
+                session_id = session['id']
+                map_id = session['map_id']
+                dug_history = safe_json_loads(session['dug_history'], [])
+                create_new = False
 
-    if create_new:
-        if balance < fee:
-            conn.close()
-            return jsonify({'error': 'Insufficient balance'}), 400
-        # Списать fee
-        cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (fee, user_id))
-        cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, -fee, 'raid_entry'))
-        # Создать сессию
-        expires_at = datetime.now() + timedelta(seconds=120)
-        cursor.execute('INSERT INTO raid_sessions (player_id, map_id, expires_at) VALUES (%s, %s, %s) RETURNING id', (user_id, map_id, expires_at.isoformat()))
-        new_session_row = cursor.fetchone()
-        session_id = new_session_row['id']
-        dug_history = []
+        if create_new:
+            if balance < fee:
+                return jsonify({'error': 'Insufficient balance'}), 400
+            # Списать fee
+            cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (fee, user_id))
+            cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, -fee, 'raid_entry'))
+            # Создать сессию
+            expires_at = datetime.now() + timedelta(seconds=120)
+            cursor.execute('INSERT INTO raid_sessions (player_id, map_id, expires_at) VALUES (%s, %s, %s) RETURNING id', (user_id, map_id, expires_at.isoformat()))
+            new_session_row = cursor.fetchone()
+            session_id = new_session_row['id']
+            dug_history = []
 
-    # Получить grid из карты
-    cursor.execute('SELECT grid_json, dug_json, skulls_json FROM maps WHERE id = %s', (map_id,))
-    map_data = cursor.fetchone()
-    if not map_data:
-        conn.close()
-        return jsonify({'error': 'Map not found'}), 404
-    grid = safe_json_loads(map_data['grid_json'], None)
-    dug = safe_json_loads(map_data['dug_json'], [])
-    skulls = safe_json_loads(map_data['skulls_json'], [])
-    if grid is None:
-        conn.close()
-        return jsonify({'error': 'Map data corrupted'}), 500
+        # Получить grid из карты
+        cursor.execute('SELECT grid_json, dug_json, skulls_json FROM maps WHERE id = %s', (map_id,))
+        map_data = cursor.fetchone()
+        if not map_data:
+            return jsonify({'error': 'Map not found'}), 404
+        grid = safe_json_loads(map_data['grid_json'], None)
+        dug = safe_json_loads(map_data['dug_json'], [])
+        skulls = safe_json_loads(map_data['skulls_json'], [])
+        if grid is None:
+            return jsonify({'error': 'Map data corrupted'}), 500
 
-    # Создать safe_grid
-    safe_grid = []
-    for i in range(48):
-        if i in dug:
-            safe_grid.append(grid[i])
-        elif grid[i] == 1:  # wall
-            safe_grid.append(1)
-        elif grid[i] == 4:  # chest
-            pair = find_chest_pair(grid, i)
-            if pair and pair in dug:
-                safe_grid.append(4)  # opened
+        # Создать safe_grid
+        safe_grid = []
+        for i in range(48):
+            if i in dug:
+                safe_grid.append(grid[i])
+            elif grid[i] == 1:  # wall
+                safe_grid.append(1)
+            elif grid[i] == 4:  # chest
+                pair = find_chest_pair(grid, i)
+                if pair and pair in dug:
+                    safe_grid.append(4)  # opened
+                else:
+                    safe_grid.append(9)
             else:
                 safe_grid.append(9)
-        else:
-            safe_grid.append(9)
 
-    conn.commit()
-    conn.close()
-
-    return jsonify({'session_id': session_id, 'safe_grid': safe_grid, 'skulls_json': skulls})
+        conn.commit()
+        return jsonify({'session_id': session_id, 'safe_grid': safe_grid, 'skulls_json': skulls})
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error in raid_start: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
+        conn.close()
 
 @app.route('/api/raid/preview', methods=['POST'])
 def raid_preview():
@@ -558,99 +601,99 @@ def raid_dig():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Получить сессию
-    cursor.execute('SELECT * FROM raid_sessions WHERE id = %s AND player_id = %s', (session_id, user_id))
-    session = cursor.fetchone()
-    if not session:
+    try:
+        # Получить сессию с блокировкой для предотвращения race condition
+        cursor.execute('SELECT * FROM raid_sessions WHERE id = %s AND player_id = %s FOR UPDATE', (session_id, user_id))
+        session = cursor.fetchone()
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+
+        expires_at = session['expires_at']
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at)
+        if datetime.now() > expires_at:
+            cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session_id))
+            conn.commit()
+            return jsonify({'status': 'timeout'})
+
+        map_id = session['map_id']
+        dug_history = safe_json_loads(session['dug_history'], [])
+
+        if cell_index in dug_history:
+            return jsonify({'error': 'Cell already dug'}), 400
+
+        # Получить карту
+        cursor.execute('SELECT grid_json, dug_json, rewards_json, skulls_json FROM maps WHERE id = %s', (map_id,))
+        map_data = cursor.fetchone()
+        grid = safe_json_loads(map_data['grid_json'], None)
+        if grid is None:
+            return jsonify({'error': 'Map data corrupted'}), 500
+        dug = safe_json_loads(map_data['dug_json'], [])
+        rewards = safe_json_loads(map_data['rewards_json'], {})
+        skulls = safe_json_loads(map_data['skulls_json'], [])
+
+        cell_type = grid[cell_index]
+
+        if cell_type == 2:  # Змея
+            # Get username
+            cursor.execute('SELECT username FROM users WHERE id = %s', (user_id,))
+            username_row = cursor.fetchone()
+            username = username_row['username'] if username_row else 'unknown'
+            death_record = {
+                "cell_index": cell_index,
+                "username": username,
+                "amount": session['earnings_buffer'],
+                "date": datetime.utcnow().isoformat()
+            }
+            skulls.append(death_record)
+            cursor.execute('UPDATE maps SET skulls_json = %s, deaths_count = deaths_count + 1 WHERE id = %s', (json.dumps(skulls), map_id))
+            cursor.execute('UPDATE raid_sessions SET status = %s, earnings_buffer = 0 WHERE id = %s', ('dead', session_id))
+            dug.append(cell_index)
+            cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
+            conn.commit()
+            return jsonify({'status': 'dead', 'cell_type': 2, 'reward': 0})
+
+        elif cell_type == 3:  # Дыра
+            cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('hurt', session_id))
+            conn.commit()
+            return jsonify({'status': 'hurt'})
+
+        else:  # Сундук или пусто
+            reward = 0
+            opened_cells = [cell_index]
+            if cell_type == 0:  # Sand
+                reward = rewards.get(str(cell_index), 0)
+            elif cell_type == 4:  # Chest
+                pair = find_chest_pair(grid, cell_index)
+                if pair is not None:
+                    opened_cells = sorted([cell_index, pair])
+                    if pair not in dug_history:
+                        reward = 10
+                        dug_history.append(pair)
+                        dug.append(pair)
+                    # else already opened, reward 0
+                else:
+                    # invalid chest, but assume valid
+                    pass
+            earnings_buffer = session['earnings_buffer'] + reward
+            dug_history.append(cell_index)
+            dug.append(cell_index)
+            cursor.execute('UPDATE raid_sessions SET earnings_buffer = %s, dug_history = %s WHERE id = %s', (earnings_buffer, json.dumps(dug_history), session_id))
+            cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
+
+            # Проверка победы
+            safe_cells = sum(1 for x in grid if x in [0, 4])
+            opened = len(dug)
+            stage_complete = opened >= safe_cells
+
+            conn.commit()
+            return jsonify({'status': 'safe', 'cell_type': cell_type, 'reward': reward, 'stage_complete': stage_complete, 'opened_cells': opened_cells})
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error in raid_dig: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
         conn.close()
-        return jsonify({'error': 'Session not found'}), 404
-
-    expires_at = session['expires_at']
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if datetime.now() > expires_at:
-        cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('timeout', session_id))
-        conn.commit()
-        conn.close()
-        return jsonify({'status': 'timeout'})
-
-    map_id = session['map_id']
-    dug_history = safe_json_loads(session['dug_history'], [])
-
-    if cell_index in dug_history:
-        conn.close()
-        return jsonify({'error': 'Cell already dug'}), 400
-
-    # Получить карту
-    cursor.execute('SELECT grid_json, dug_json, rewards_json, skulls_json FROM maps WHERE id = %s', (map_id,))
-    map_data = cursor.fetchone()
-    grid = safe_json_loads(map_data['grid_json'], None)
-    if grid is None:
-        conn.close()
-        return jsonify({'error': 'Map data corrupted'}), 500
-    dug = safe_json_loads(map_data['dug_json'], [])
-    rewards = safe_json_loads(map_data['rewards_json'], {})
-    skulls = safe_json_loads(map_data['skulls_json'], [])
-
-    cell_type = grid[cell_index]
-
-    if cell_type == 2:  # Змея
-        # Get username
-        cursor.execute('SELECT username FROM users WHERE id = %s', (user_id,))
-        username_row = cursor.fetchone()
-        username = username_row['username'] if username_row else 'unknown'
-        death_record = {
-            "cell_index": cell_index,
-            "username": username,
-            "amount": session['earnings_buffer'],
-            "date": datetime.utcnow().isoformat()
-        }
-        skulls.append(death_record)
-        cursor.execute('UPDATE maps SET skulls_json = %s, deaths_count = deaths_count + 1 WHERE id = %s', (json.dumps(skulls), map_id))
-        cursor.execute('UPDATE raid_sessions SET status = %s, earnings_buffer = 0 WHERE id = %s', ('dead', session_id))
-        dug.append(cell_index)
-        cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
-        conn.commit()
-        conn.close()
-        return jsonify({'status': 'dead', 'cell_type': 2, 'reward': 0})
-
-    elif cell_type == 3:  # Дыра
-        cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('hurt', session_id))
-        conn.commit()
-        conn.close()
-        return jsonify({'status': 'hurt'})
-
-    else:  # Сундук или пусто
-        reward = 0
-        opened_cells = [cell_index]
-        if cell_type == 0:  # Sand
-            reward = rewards.get(str(cell_index), 0)
-        elif cell_type == 4:  # Chest
-            pair = find_chest_pair(grid, cell_index)
-            if pair is not None:
-                opened_cells = sorted([cell_index, pair])
-                if pair not in dug_history:
-                    reward = 10
-                    dug_history.append(pair)
-                    dug.append(pair)
-                # else already opened, reward 0
-            else:
-                # invalid chest, but assume valid
-                pass
-        earnings_buffer = session['earnings_buffer'] + reward
-        dug_history.append(cell_index)
-        dug.append(cell_index)
-        cursor.execute('UPDATE raid_sessions SET earnings_buffer = %s, dug_history = %s WHERE id = %s', (earnings_buffer, json.dumps(dug_history), session_id))
-        cursor.execute('UPDATE maps SET dug_json = %s WHERE id = %s', (json.dumps(dug), map_id))
-
-        # Проверка победы
-        safe_cells = sum(1 for x in grid if x in [0, 4])
-        opened = len(dug)
-        stage_complete = opened >= safe_cells
-
-        conn.commit()
-        conn.close()
-        return jsonify({'status': 'safe', 'cell_type': cell_type, 'reward': reward, 'stage_complete': stage_complete, 'opened_cells': opened_cells})
 
 @app.route('/api/raid/leave', methods=['POST'])
 def raid_leave():
@@ -664,21 +707,25 @@ def raid_leave():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT earnings_buffer FROM raid_sessions WHERE id = %s AND player_id = %s', (session_id, user_id))
-    session = cursor.fetchone()
-    if not session:
+    try:
+        cursor.execute('SELECT earnings_buffer FROM raid_sessions WHERE id = %s AND player_id = %s', (session_id, user_id))
+        session = cursor.fetchone()
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+
+        earnings = session['earnings_buffer']
+        cursor.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (earnings, user_id))
+        cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, earnings, 'raid_win'))
+        cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('completed', session_id))
+
+        conn.commit()
+        return jsonify({'success': True, 'earnings': earnings})
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error in raid_leave: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
         conn.close()
-        return jsonify({'error': 'Session not found'}), 404
-
-    earnings = session['earnings_buffer']
-    cursor.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (earnings, user_id))
-    cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, earnings, 'raid_win'))
-    cursor.execute('UPDATE raid_sessions SET status = %s WHERE id = %s', ('completed', session_id))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True, 'earnings': earnings})
 
 @app.route('/api/my_tombs', methods=['POST'])
 def my_tombs():
@@ -720,31 +767,34 @@ def my_tombs_claim():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s AND creator_id = %s', (map_id, user_id))
-    map_data = cursor.fetchone()
-    if not map_data:
+    try:
+        cursor.execute('SELECT grid_json, dug_json FROM maps WHERE id = %s AND creator_id = %s', (map_id, user_id))
+        map_data = cursor.fetchone()
+        if not map_data:
+            return jsonify({'error': 'Map not found'}), 404
+
+        grid = json.loads(map_data['grid_json'])
+        dug = json.loads(map_data['dug_json'])
+        safe_cells = sum(1 for i, x in enumerate(grid) if x in [0, 4] and i not in dug)
+        if safe_cells >= 12:  # Пример цели
+            return jsonify({'error': 'Not ready to claim'}), 400
+
+        # Деактивировать карту
+        cursor.execute('UPDATE maps SET active = FALSE WHERE id = %s', (map_id,))
+
+        # Награда: заглушка
+        reward = 1.0
+        cursor.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (reward, user_id))
+        cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, reward, 'claim'))
+
+        conn.commit()
+        return jsonify({'success': True, 'reward': reward})
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error in my_tombs_claim: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+    finally:
         conn.close()
-        return jsonify({'error': 'Map not found'}), 404
-
-    grid = json.loads(map_data['grid_json'])
-    dug = json.loads(map_data['dug_json'])
-    safe_cells = sum(1 for i, x in enumerate(grid) if x in [0, 4] and i not in dug)
-    if safe_cells >= 12:  # Пример цели
-        conn.close()
-        return jsonify({'error': 'Not ready to claim'}), 400
-
-    # Деактивировать карту
-    cursor.execute('UPDATE maps SET active = FALSE WHERE id = %s', (map_id,))
-
-    # Награда: заглушка
-    reward = 1.0
-    cursor.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (reward, user_id))
-    cursor.execute('INSERT INTO transactions (user_id, amount, type) VALUES (%s, %s, %s)', (user_id, reward, 'claim'))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({'success': True, 'reward': reward})
 
 @app.route('/api/profile', methods=['POST'])
 def profile():
@@ -818,33 +868,35 @@ def onboard():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Проверить уникальность
-        cursor.execute('SELECT id FROM users WHERE username = %s AND id != %s', (username, user_id))
-        if cursor.fetchone():
-            conn.close()
-            return jsonify({'error': 'Username already taken'}), 400
+        try:
+            # Проверить уникальность
+            cursor.execute('SELECT id FROM users WHERE username = %s AND id != %s', (username, user_id))
+            if cursor.fetchone():
+                return jsonify({'error': 'Username already taken'}), 400
 
-        # Проверить, что пользователь не завершен setup
-        cursor.execute('SELECT is_setup_complete FROM users WHERE id = %s', (user_id,))
-        user_row = cursor.fetchone()
-        if not user_row:
-            conn.close()
-            return jsonify({'error': 'User not found'}), 404
-        if user_row['is_setup_complete']:
-            conn.close()
-            return jsonify({'error': 'Already onboarded'}), 400
+            # Проверить, что пользователь не завершен setup
+            cursor.execute('SELECT is_setup_complete FROM users WHERE id = %s', (user_id,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({'error': 'User not found'}), 404
+            if user_row['is_setup_complete']:
+                return jsonify({'error': 'Already onboarded'}), 400
 
-        # Обновить username и is_setup_complete
-        cursor.execute('UPDATE users SET username = %s, is_setup_complete = TRUE WHERE id = %s', (username, user_id))
-        rowcount = cursor.rowcount
-        if rowcount == 0:
-            logging.warning(f"User {user_id} not found during onboard update!")
-        elif rowcount > 0:
-            logging.info(f"Successfully updated {rowcount} row(s) for user {user_id}")
-        conn.commit()
-        conn.close()
-
-        return jsonify({'success': True})
+            # Обновить username и is_setup_complete
+            cursor.execute('UPDATE users SET username = %s, is_setup_complete = TRUE WHERE id = %s', (username, user_id))
+            rowcount = cursor.rowcount
+            if rowcount == 0:
+                logging.warning(f"User {user_id} not found during onboard update!")
+            elif rowcount > 0:
+                logging.info(f"Successfully updated {rowcount} row(s) for user {user_id}")
+            conn.commit()
+            return jsonify({'success': True})
+        except Exception as e:
+            conn.rollback()
+            logging.error(f"Error in onboard database operations: {e}")
+            return jsonify({'error': 'Internal server error'}), 500
+        finally:
+            conn.close()
     except Exception as e:
         logging.error(f"Error in onboard: {e}")
         return jsonify({'error': 'Internal server error'}), 500
